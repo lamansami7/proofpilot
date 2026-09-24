@@ -27,9 +27,11 @@ export class UnavailableAIService implements AIService {
 }
 export function validateReceiptExtraction(value: unknown): ReceiptExtraction {
   if (!value || typeof value !== 'object') throw new Error('Invalid receipt extraction');
-  const v = value as Record<string, any>;
+  const v = value as Record<string, unknown>;
   const nullable = (x: unknown) => typeof x === 'string' ? x : null;
   const numeric = (x: unknown) => typeof x === 'number' && Number.isFinite(x) ? x : null;
   const confidence = typeof v.confidence === 'number' && v.confidence >= 0 && v.confidence <= 1 ? v.confidence : 0;
-  return { merchant: nullable(v.merchant), product_name: nullable(v.product_name), purchase_date: nullable(v.purchase_date), price: numeric(v.price), currency: nullable(v.currency), category: nullable(v.category), serial_number: nullable(v.serial_number), model_number: nullable(v.model_number), sku: nullable(v.sku), receipt_number: nullable(v.receipt_number), possible_return_window: v.possible_return_window && typeof v.possible_return_window === 'object' ? { start_date: nullable(v.possible_return_window.start_date), end_date: nullable(v.possible_return_window.end_date), confidence: Math.min(1, Math.max(0, Number(v.possible_return_window.confidence) || 0)) } : null, possible_warranty: v.possible_warranty && typeof v.possible_warranty === 'object' ? { provider: nullable(v.possible_warranty.provider), start_date: nullable(v.possible_warranty.start_date), end_date: nullable(v.possible_warranty.end_date), confidence: Math.min(1, Math.max(0, Number(v.possible_warranty.confidence) || 0)) } : null, confidence };
+  const returnWindow = v.possible_return_window && typeof v.possible_return_window === 'object' ? v.possible_return_window as Record<string, unknown> : null;
+  const warranty = v.possible_warranty && typeof v.possible_warranty === 'object' ? v.possible_warranty as Record<string, unknown> : null;
+  return { merchant: nullable(v.merchant), product_name: nullable(v.product_name), purchase_date: nullable(v.purchase_date), price: numeric(v.price), currency: nullable(v.currency), category: nullable(v.category), serial_number: nullable(v.serial_number), model_number: nullable(v.model_number), sku: nullable(v.sku), receipt_number: nullable(v.receipt_number), possible_return_window: returnWindow ? { start_date: nullable(returnWindow.start_date), end_date: nullable(returnWindow.end_date), confidence: Math.min(1, Math.max(0, Number(returnWindow.confidence) || 0)) } : null, possible_warranty: warranty ? { provider: nullable(warranty.provider), start_date: nullable(warranty.start_date), end_date: nullable(warranty.end_date), confidence: Math.min(1, Math.max(0, Number(warranty.confidence) || 0)) } : null, confidence };
 }
