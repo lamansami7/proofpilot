@@ -6,6 +6,7 @@ export type FeatherIconName = ComponentProps<typeof Feather>['name'];
 export type ProtectionStatus = 'protected' | 'attention' | 'unprotected';
 export type DeadlineType = 'return' | 'warranty' | 'rebate' | 'custom';
 export type DeadlineStatus = 'overdue' | 'today' | 'urgent' | 'upcoming' | 'later';
+export type DocumentKind = 'receipt' | 'warranty' | 'manual' | 'claim' | 'other';
 
 export type PurchaseDeadline = {
   id: string;
@@ -17,8 +18,13 @@ export type PurchaseDeadline = {
 export type PurchaseDocument = {
   id: string;
   name: string;
-  kind: 'receipt' | 'warranty' | 'other';
+  kind: DocumentKind;
   mimeType: string | null;
+  /** Local file location from the picker, when one was captured. Not guaranteed to survive app cache clears. */
+  uri?: string | null;
+  /** Inline text content for documents ProofPilot itself creates (e.g. claim drafts). */
+  content?: string | null;
+  addedAt?: string | null;
 };
 
 export type Purchase = {

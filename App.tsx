@@ -1,85 +1,304 @@
-import React, { useMemo, useState } from 'react';
-import { Modal, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { ActionCard, DeadlineRow, PurchaseCard, StatCard } from './src/components/purchaseComponents';
-import { PurchaseDetails, PurchaseFlow } from './src/components/purchaseFlow';
+import { AuthScreen } from './src/components/authScreen';
+import { Dashboard } from './src/components/dashboard';
 import { DeadlineRadar } from './src/components/deadlineRadar';
-import { Badge, Button, Card, EmptyState, IconButton, Input, SectionHeader } from './src/components/ui';
+import { PurchaseDetails } from './src/components/purchaseDetails';
+import { PurchaseFlow } from './src/components/purchaseFlow';
+import { PurchasesScreen } from './src/components/purchasesScreen';
+import { SettingsScreen } from './src/components/settingsScreen';
+import { VaultScreen } from './src/components/vaultScreen';
+import { IconButton, Input, LoadingState, interactive } from './src/components/ui';
 import { demoPurchases } from './src/data/demoPurchases';
 import { colors, radius, shadows, sizing, spacing, type } from './src/design/tokens';
+import { useAppSettings } from './src/hooks/useAppSettings';
 import { useBreakpoint } from './src/hooks/useBreakpoint';
+import { usePurchaseStore } from './src/hooks/usePurchaseStore';
 import { useSession } from './src/hooks/useSession';
-import { AuthScreen } from './src/components/authScreen';
-import { actionNeeded, formatDate, formatMoney, normalizedDeadlines, protectedPurchaseCount, protectedValue, protectionLabel, recentPurchases, upcomingDeadlines, urgentDeadlines } from './src/lib/purchaseSelectors';
+import { documentInventory, initialsFor, normalizedDeadlines, urgentDeadlines } from './src/lib/purchaseSelectors';
+import { createAIService } from './src/services/ai/AIService';
 import type { FeatherIconName, Purchase } from './src/types/purchase';
 
 type Tab = 'Home' | 'Purchases' | 'Deadlines' | 'Vault' | 'Settings';
-type PurchaseForm = { name: string; merchant: string; price: string; date: string };
-const navigation: Array<{ label: Tab; icon: FeatherIconName }> = [{ label: 'Home', icon: 'home' }, { label: 'Purchases', icon: 'shopping-bag' }, { label: 'Deadlines', icon: 'calendar' }, { label: 'Vault', icon: 'archive' }, { label: 'Settings', icon: 'settings' }];
+type NavItem = { label: Tab; icon: FeatherIconName; badge?: number; muted?: boolean };
+type Toast = { message: string; tone: 'success' | 'danger' | 'info' };
 
 export default function App() {
   const viewport = useBreakpoint();
   const session = useSession();
+  const store = usePurchaseStore();
+  const { settings, update: updateSettings } = useAppSettings();
   const [tab, setTab] = useState<Tab>('Home');
-  const [items, setItems] = useState<Purchase[]>(demoPurchases);
-  const [selected, setSelected] = useState<Purchase | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
+  const [selectedId, setSelectedId] = useState<Purchase['id'] | null>(null);
+  const [flowOpen, setFlowOpen] = useState(false);
+  const [editing, setEditing] = useState<Purchase | null>(null);
   const [query, setQuery] = useState('');
-  const [form, setForm] = useState<PurchaseForm>({ name: '', merchant: '', price: '', date: '' });
-  const [toast, setToast] = useState('');
-  const notify = (message: string) => { setToast(message); setTimeout(() => setToast(''), 2600); };
-  const filtered = useMemo(() => items.filter((item) => [item.name, item.merchant, item.category, item.serial, item.model, item.notes].filter(Boolean).join(' ').toLowerCase().includes(query.toLowerCase())), [items, query]);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const notify = (message: string, tone: Toast['tone'] = 'success') => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ message, tone });
+    toastTimer.current = setTimeout(() => setToast(null), 3400);
+  };
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+  useEffect(() => { if (store.storageError) notify('Device storage is unavailable — changes may not persist between sessions.', 'danger'); }, [store.storageError]);
+
+  const items = store.items;
+  const selected = useMemo(() => items.find((item) => item.id === selectedId) ?? null, [items, selectedId]);
   const deadlines = useMemo(() => normalizedDeadlines(items), [items]);
-  const upcoming = useMemo(() => deadlines.filter((deadline) => deadline.days >= 0), [deadlines]);
-  const actions = useMemo(() => actionNeeded(items), [items]);
-  const save = (purchase: Purchase) => { setItems((current) => editingPurchase ? current.map((item) => item.id === purchase.id ? purchase : item) : [purchase, ...current]); setEditingPurchase(null); setTab('Purchases'); notify(editingPurchase ? 'Purchase details updated.' : 'Purchase protected and added to your vault.'); };
-  const openPurchase = (purchase: Purchase) => setSelected(purchase);
-  if (session.configured && !session.loading && !session.user) return <SafeAreaView style={styles.app}><StatusBar style="dark" /><AuthScreen onSubmit={async (email, password, signUp) => { const { error } = signUp ? await session.signUp(email, password) : await session.signIn(email, password); if (error) throw error; }} /></SafeAreaView>;
-  return <SafeAreaView style={styles.app}><StatusBar style="dark" /><View style={styles.frame}>
-    {!viewport.isPhone ? <Sidebar active={tab} count={urgentDeadlines(items).length} itemCount={items.length} onSelect={setTab} /> : null}
-    <View style={styles.main}><Topbar query={query} setQuery={setQuery} onDeadlines={() => setTab('Deadlines')} compact={viewport.isPhone} />
-      <ScrollView contentContainerStyle={[styles.content, viewport.isPhone && styles.contentPhone]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        {tab === 'Home' ? <Dashboard items={items} actions={actions} upcoming={upcoming} onAdd={() => setAddOpen(true)} onOpen={openPurchase} onPurchases={() => setTab('Purchases')} onDeadlines={() => setTab('Deadlines')} isPhone={viewport.isPhone} /> : null}
-        {tab === 'Purchases' ? <PurchasesPage items={filtered} total={items.length} onAdd={() => setAddOpen(true)} onOpen={openPurchase} query={query} setQuery={setQuery} /> : null}
-        {tab === 'Deadlines' ? <DeadlineRadar deadlines={deadlines} onOpenPurchase={openPurchase} onAdd={() => setAddOpen(true)} /> : null}
-        {tab === 'Vault' ? <VaultPage items={items} onNotify={notify} /> : null}
-        {tab === 'Settings' ? <SettingsPage onNotify={notify} /> : null}
-      </ScrollView>
-      {viewport.isPhone ? <BottomNav active={tab} onSelect={setTab} /> : null}
-    </View>
-  </View>
-  {viewport.isPhone ? <Pressable accessibilityRole="button" accessibilityLabel="Protect a purchase" onPress={() => setAddOpen(true)} style={styles.fab}><Feather name="plus" size={25} color={colors.ink} /></Pressable> : null}
-  <PurchaseFlow visible={addOpen} initialPurchase={editingPurchase} onClose={() => { setAddOpen(false); setEditingPurchase(null); }} onSave={save} />
-  <PurchaseDetails purchase={selected} onClose={() => setSelected(null)} onEdit={(purchase) => { setSelected(null); setEditingPurchase(purchase); setAddOpen(true); }} onDelete={(purchase) => { setItems((current) => current.filter((item) => item.id !== purchase.id)); setSelected(null); notify('Purchase deleted from your vault.'); }} />
-  {toast ? <View accessibilityLiveRegion="polite" style={styles.toast}><Feather name="check-circle" color={colors.brand} size={17} /><Text style={styles.toastText}>{toast}</Text></View> : null}
-  </SafeAreaView>;
+  const urgentCount = useMemo(() => urgentDeadlines(items).length, [items]);
+  const documentCount = useMemo(() => documentInventory(items).all.length, [items]);
+  const merchants = useMemo(() => Array.from(new Set(items.map((item) => item.merchant))).sort(), [items]);
+  const aiConfigured = useMemo(() => createAIService().isConfigured, []);
+  const userEmail = session.user?.email ?? null;
+
+  const sampleVisible = useMemo(() => {
+    if (settings.sampleBannerDismissed || items.length !== demoPurchases.length || items.length === 0) return false;
+    return items.every((item) => demoPurchases.some((demo) => demo.id === item.id));
+  }, [items, settings.sampleBannerDismissed]);
+
+  const filtered = useMemo(() => items.filter((item) => [item.name, item.merchant, item.category, item.serial, item.model, item.notes].filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())), [items, query]);
+
+  const openPurchase = (purchase: Purchase) => setSelectedId(purchase.id);
+  const openAddFlow = () => { setEditing(null); setFlowOpen(true); };
+  const openEditFlow = (purchase: Purchase) => { setSelectedId(null); setEditing(purchase); setFlowOpen(true); };
+  const savePurchase = (purchase: Purchase) => { store.upsert(purchase); notify(editing ? 'Purchase record updated.' : `${purchase.name} is now protected.`); };
+  const updatePurchase = (purchase: Purchase) => store.upsert(purchase);
+  const deletePurchase = (purchase: Purchase) => { store.remove(purchase.id); setSelectedId(null); notify(`${purchase.name} was deleted.`, 'info'); };
+
+  const onSearch = (value: string) => { setQuery(value); if (value && tab !== 'Purchases') setTab('Purchases'); };
+  const restoreSamples = () => { store.restoreSamples(); updateSettings({ sampleBannerDismissed: false }); };
+
+  if (session.configured && session.loading) {
+    return (
+      <SafeAreaView style={styles.app}>
+        <StatusBar style="dark" />
+        <View style={styles.boot}>
+          <View style={styles.brand}><View style={styles.logo}><Feather name="shield" size={20} color={colors.ink} /></View><Text style={styles.brandName}>ProofPilot</Text></View>
+          <LoadingState label="Checking your session…" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (session.configured && !session.user) {
+    return (
+      <SafeAreaView style={styles.app}>
+        <StatusBar style="dark" />
+        <AuthScreen onSubmit={async (email, password, signUp) => {
+          const { data, error } = signUp ? await session.signUp(email, password) : await session.signIn(email, password);
+          if (error) throw error;
+          if (signUp && !data.session) return { info: 'We sent a confirmation link to your email. Confirm it, then sign in here.' };
+        }} />
+      </SafeAreaView>
+    );
+  }
+
+  const navGroups: Array<{ label: string; items: NavItem[] }> = [
+    { label: 'OVERVIEW', items: [{ label: 'Home', icon: 'home' }] },
+    { label: 'PROTECTION', items: [
+      { label: 'Purchases', icon: 'shopping-bag', badge: items.length },
+      { label: 'Deadlines', icon: 'calendar', badge: urgentCount, muted: urgentCount === 0 },
+      { label: 'Vault', icon: 'archive', badge: documentCount, muted: documentCount === 0 },
+    ] },
+    { label: 'ACCOUNT', items: [{ label: 'Settings', icon: 'settings' }] },
+  ];
+
+  return (
+    <SafeAreaView style={styles.app}>
+      <StatusBar style="dark" />
+      <View style={styles.frame}>
+        {!viewport.isPhone ? (
+          <Sidebar groups={navGroups} active={tab} onSelect={setTab} userEmail={userEmail} configured={session.configured} onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))} itemCount={items.length} />
+        ) : null}
+        <View style={styles.main}>
+          <Topbar query={query} onSearch={onSearch} urgentCount={urgentCount} userEmail={userEmail} compact={viewport.isPhone} onDeadlines={() => setTab('Deadlines')} onAccount={() => setTab('Settings')} />
+          <ScrollView contentContainerStyle={[styles.content, viewport.isPhone && styles.contentPhone]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            {!store.hydrated ? <LoadingState label="Loading your protection record…" /> : (
+              <>
+                {tab === 'Home' ? <Dashboard items={items} isPhone={viewport.isPhone} userEmail={userEmail} sampleVisible={sampleVisible} aiConfigured={aiConfigured} onAdd={openAddFlow} onOpen={openPurchase} onPurchases={() => setTab('Purchases')} onDeadlines={() => setTab('Deadlines')} onVault={() => setTab('Vault')} onDismissSample={() => updateSettings({ sampleBannerDismissed: true })} onClearSamples={() => { store.replaceAll([]); updateSettings({ sampleBannerDismissed: true }); notify('Sample data cleared.', 'info'); }} onRestoreSamples={() => { restoreSamples(); notify('Sample data loaded.'); }} /> : null}
+                {tab === 'Purchases' ? <PurchasesScreen items={filtered} total={items.length} query={query} onAdd={openAddFlow} onOpen={openPurchase} /> : null}
+                {tab === 'Deadlines' ? <DeadlineRadar deadlines={deadlines} onOpenPurchase={openPurchase} onAdd={openAddFlow} /> : null}
+                {tab === 'Vault' ? <VaultScreen items={items} onAdd={openAddFlow} onOpenPurchase={openPurchase} /> : null}
+                {tab === 'Settings' ? <SettingsScreen items={items} settings={settings} updateSettings={updateSettings} userEmail={userEmail} configured={session.configured} onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))} onRestoreSamples={() => { restoreSamples(); notify('Sample data restored.'); }} onDeleteAll={() => { store.replaceAll([]); notify('All purchases deleted from this device.', 'info'); }} onNotify={notify} /> : null}
+              </>
+            )}
+          </ScrollView>
+          {viewport.isPhone ? <BottomNav active={tab} onSelect={setTab} urgentCount={urgentCount} /> : null}
+        </View>
+      </View>
+
+      {viewport.isPhone ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Protect a purchase" onPress={openAddFlow} style={interactive(styles.fab, { hover: { backgroundColor: colors.brandStrong }, pressed: { opacity: 0.88 } })}>
+          <Feather name="plus" size={25} color={colors.ink} />
+        </Pressable>
+      ) : null}
+
+      <PurchaseFlow visible={flowOpen} initialPurchase={editing} merchants={merchants} defaultReturnDays={settings.defaultReturnWindowDays} onClose={() => { setFlowOpen(false); setEditing(null); }} onSave={savePurchase} onDone={(purchase) => { setFlowOpen(false); setEditing(null); setSelectedId(purchase.id); }} />
+      <PurchaseDetails purchase={selected} onClose={() => setSelectedId(null)} onEdit={openEditFlow} onDelete={deletePurchase} onUpdate={updatePurchase} onNotify={notify} />
+
+      {toast ? (
+        <View accessibilityLiveRegion="polite" style={[styles.toast, viewport.isPhone && styles.toastPhone]}>
+          <Feather name={toast.tone === 'danger' ? 'alert-circle' : toast.tone === 'info' ? 'info' : 'check-circle'} color={toast.tone === 'danger' ? '#F2B8BD' : toast.tone === 'info' ? '#B9CFEA' : colors.brand} size={17} />
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </View>
+      ) : null}
+    </SafeAreaView>
+  );
 }
 
-function Sidebar({ active, count, itemCount, onSelect }: { active: Tab; count: number; itemCount: number; onSelect: (tab: Tab) => void }) { return <View style={styles.sidebar}><View style={styles.brand}><View style={styles.logo}><Feather name="shield" size={20} color={colors.ink} /></View><View><Text style={styles.brandName}>ProofPilot</Text><Text style={styles.brandTag}>PURCHASE PROTECTION</Text></View></View><View style={styles.nav}>{navigation.map((item) => <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{ selected: active === item.label }} onPress={() => onSelect(item.label)} style={({ pressed }) => [styles.navItem, active === item.label && styles.navActive, pressed && styles.pressed]}><Feather name={item.icon} size={18} color={active === item.label ? colors.ink : colors.muted} /><Text style={[styles.navText, active === item.label && styles.navTextActive]}>{item.label}</Text>{item.label === 'Deadlines' && count > 0 ? <Badge label={String(count)} tone="warning" /> : null}</Pressable>)}</View><View style={styles.sidebarBottom}><Card style={styles.planCard}><View style={styles.planIcon}><Feather name="shield" size={16} color={colors.brandDark} /></View><Text style={styles.planTitle}>A safer record of what you own.</Text><Text style={type.bodySmall}>{itemCount} purchases organized in your vault</Text></Card><View style={styles.profile}><View style={styles.avatar}><Text style={styles.avatarText}>JD</Text></View><View style={{ flex: 1 }}><Text style={type.label}>Jordan Davis</Text><Text style={type.bodySmall}>Free plan</Text></View><Feather name="more-horizontal" color={colors.muted} size={18} /></View></View></View>; }
-function Topbar({ query, setQuery, onDeadlines, compact }: { query: string; setQuery: (query: string) => void; onDeadlines: () => void; compact: boolean }) { return <View style={styles.topbar}>{compact ? <View style={styles.mobileBrand}><View style={styles.logoSmall}><Feather name="shield" size={16} color={colors.ink} /></View><Text style={styles.brandName}>ProofPilot</Text></View> : null}<View style={[styles.search, compact && styles.searchCompact]}><Feather name="search" size={17} color={colors.muted} /><Input accessibilityLabel="Search purchases, merchants, products, serial numbers, or notes" value={query} onChangeText={setQuery} placeholder={compact ? 'Search' : 'Search purchases, merchants, serial numbers…'} style={styles.searchInput} /></View><IconButton icon="bell" label="View deadlines" onPress={onDeadlines} /><View style={styles.topAvatar}><Text style={styles.avatarText}>JD</Text></View></View>; }
-function Dashboard({ items, actions, upcoming, onAdd, onOpen, onPurchases, onDeadlines, isPhone }: { items: Purchase[]; actions: ReturnType<typeof actionNeeded>; upcoming: ReturnType<typeof upcomingDeadlines>; onAdd: () => void; onOpen: (purchase: Purchase) => void; onPurchases: () => void; onDeadlines: () => void; isPhone: boolean }) { const protectionCount = protectedPurchaseCount(items); const attentionCount = actions.length; return <>
-  <View style={[styles.hero, isPhone && styles.heroPhone]}><View style={styles.heroCopy}><Text style={type.eyebrow}>YOUR PROTECTION OVERVIEW</Text><Text style={type.title}>Good morning, Jordan.</Text><Text style={[type.body, styles.heroDescription]}>ProofPilot keeps your receipts, coverage, and time-sensitive purchase details ready when you need them.</Text></View><Button label="Protect a purchase" icon="plus" onPress={onAdd} /></View>
-  {items.length === 0 ? <EmptyState icon="shield" title="Protect your first purchase" message="Add a receipt or purchase detail now, and ProofPilot will keep the important dates and documents within reach." actionLabel="Protect a purchase" onAction={onAdd} /> : <>
-  <View style={styles.stats}><StatCard icon="shield" label="Purchases protected" value={String(protectionCount)} detail={`${items.length} purchases in your vault`} /><StatCard icon="dollar-sign" label="Total value protected" value={formatMoney(protectedValue(items))} detail="Across protected purchases" tone="info" /><StatCard icon="calendar" label="Deadlines coming up" value={String(upcoming.length)} detail={upcoming[0] ? `Next: ${formatDate(upcoming[0].date)}` : 'Nothing scheduled'} tone="warning" /><StatCard icon="alert-circle" label="Needs attention" value={String(attentionCount)} detail={attentionCount ? 'A few details need review' : 'Everything looks current'} tone={attentionCount ? 'danger' : 'brand'} /></View>
-  <View style={[styles.dashboardGrid, isPhone && styles.dashboardGridPhone]}><View style={styles.dashboardPrimary}><SectionHeader title="Action needed" actionLabel="View deadlines" onAction={onDeadlines} />{actions.length ? <Card>{actions.slice(0, 4).map((action) => <ActionCard key={action.id} title={action.title} description={action.description} item={action.purchase} onPress={() => onOpen(action.purchase)} />)}</Card> : <EmptyState icon="check-circle" title="You’re all caught up" message="Your purchase records do not need attention right now." />}</View><View style={styles.dashboardSecondary}><SectionHeader title="Upcoming deadlines" actionLabel="Deadline Radar" onAction={onDeadlines} />{upcoming.length ? <Card>{upcoming.slice(0, 4).map((deadline) => <DeadlineRow key={deadline.id} deadline={deadline} onPress={() => onOpen(deadline.purchase)} />)}</Card> : <EmptyState icon="calendar" title="No upcoming deadlines" message="Add return, warranty, rebate, or custom dates when you protect a purchase." />}</View></View>
-  <SectionHeader title="Recent purchases" actionLabel={`See all ${items.length}`} onAction={onPurchases} /><View style={styles.purchaseGrid}>{recentPurchases(items).slice(0, 3).map((purchase) => <PurchaseCard key={purchase.id} item={purchase} onPress={() => onOpen(purchase)} />)}</View>
-  </>}</>; }
-function PurchasesPage({ items, total, onAdd, onOpen, query, setQuery }: { items: Purchase[]; total: number; onAdd: () => void; onOpen: (purchase: Purchase) => void; query: string; setQuery: (query: string) => void }) { return <><View style={styles.pageTitle}><View><Text style={type.eyebrow}>YOUR COLLECTION</Text><Text style={type.title}>Your purchases</Text><Text style={[type.body, styles.pageSubtitle]}>Everything you own, with the details that matter.</Text></View><Button label="Protect a purchase" icon="plus" onPress={onAdd} /></View><View style={styles.filterRow}><Text style={type.eyebrow}>{items.length} OF {total} ITEMS</Text><Input accessibilityLabel="Filter purchases" value={query} onChangeText={setQuery} placeholder="Filter purchases" style={styles.filterInput} /></View>{items.length ? <View style={styles.purchaseGrid}>{items.map((purchase) => <PurchaseCard key={purchase.id} item={purchase} onPress={() => onOpen(purchase)} />)}</View> : <EmptyState icon="search" title="No purchases found" message="Try another product, merchant, category, serial number, or note." />}</>; }
-function DeadlinesPage({ deadlines, onOpen }: { deadlines: ReturnType<typeof upcomingDeadlines>; onOpen: (purchase: Purchase) => void }) { return <><Text style={type.eyebrow}>STAY ONE STEP AHEAD</Text><Text style={type.title}>Deadline Radar</Text><Text style={[type.body, styles.pageSubtitle]}>Important dates, clearly in view. No surprises.</Text><View style={styles.deadlinePage}>{deadlines.length ? <Card>{deadlines.map((deadline) => <DeadlineRow key={deadline.id} deadline={deadline} onPress={() => onOpen(deadline.purchase)} />)}</Card> : <EmptyState icon="calendar" title="Your calendar is clear" message="When you add a deadline to a purchase, it will show up here." />}</View></>; }
-function VaultPage({ items, onNotify }: { items: Purchase[]; onNotify: (message: string) => void }) { const categories = Array.from(new Set(items.map((item) => item.category))); return <><Text style={type.eyebrow}>YOUR HOME, AT A GLANCE</Text><Text style={type.title}>My Home</Text><Text style={[type.body, styles.pageSubtitle]}>A more useful record of everything you own.</Text><Card style={styles.vaultHero}><View style={styles.vaultIcon}><Feather name="home" size={25} color={colors.brand} /></View><Text style={styles.vaultTitle}>Your home inventory</Text><Text style={[type.body, styles.vaultDescription]}>Your protected purchases are becoming a practical inventory for your home.</Text><Button label="Generate home inventory" icon="download" variant="secondary" onPress={() => onNotify('Your inventory is ready to export when you have more items.')} /></Card><SectionHeader title="By category" /><View style={styles.categoryGrid}>{categories.map((category) => <Card key={category} style={styles.categoryCard}><Text style={type.label}>{category}</Text><Text style={[type.bodySmall, { marginTop: 4 }]}>{items.filter((item) => item.category === category).length} item{items.filter((item) => item.category === category).length === 1 ? '' : 's'}</Text></Card>)}</View></>; }
-function SettingsPage({ onNotify }: { onNotify: (message: string) => void }) { const settings: Array<{ icon: FeatherIconName; title: string; detail: string }> = [{ icon: 'user', title: 'Profile', detail: 'Jordan Davis' }, { icon: 'users', title: 'Household', detail: 'Not set up' }, { icon: 'bell', title: 'Notifications', detail: 'Deadlines & reminders' }, { icon: 'lock', title: 'Privacy & security', detail: 'Your data stays yours' }, { icon: 'credit-card', title: 'Subscription', detail: 'Free plan · 20 purchases' }, { icon: 'download', title: 'Export my data', detail: 'Download your information' }, { icon: 'help-circle', title: 'Help & support', detail: 'We’re here to help' }]; return <><Text style={type.eyebrow}>MAKE IT YOURS</Text><Text style={type.title}>Settings</Text><Text style={[type.body, styles.pageSubtitle]}>Your account, privacy, and preferences.</Text><Card style={styles.settings}>{settings.map((setting) => <Pressable key={setting.title} accessibilityRole="button" accessibilityLabel={setting.title} onPress={() => onNotify(`${setting.title} settings are coming up next.`)} style={({ pressed }) => [styles.setting, pressed && styles.pressed]}><View style={styles.settingIcon}><Feather name={setting.icon} size={17} color={colors.ink} /></View><View style={{ flex: 1 }}><Text style={type.label}>{setting.title}</Text><Text style={type.bodySmall}>{setting.detail}</Text></View><Feather name="chevron-right" size={18} color={colors.subtle} /></Pressable>)}</Card></>; }
-function BottomNav({ active, onSelect }: { active: Tab; onSelect: (tab: Tab) => void }) { return <View style={styles.bottomNav}>{navigation.map((item) => <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{ selected: active === item.label }} onPress={() => onSelect(item.label)} style={styles.bottomItem}><Feather name={item.icon} size={20} color={active === item.label ? colors.brandDark : colors.muted} /><Text style={[styles.bottomText, active === item.label && styles.bottomTextActive]}>{item.label}</Text></Pressable>)}</View>; }
-function AddPurchaseModal({ visible, form, onChange, onClose, onSave, onNotify }: { visible: boolean; form: PurchaseForm; onChange: (value: PurchaseForm) => void; onClose: () => void; onSave: () => void; onNotify: (message: string) => void }) { return <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}><View style={styles.shade}><View style={styles.sheet}><View style={styles.handle} /><View style={styles.sheetHeader}><View><Text style={type.heading}>Protect a purchase</Text><Text style={type.bodySmall}>Keep the details that matter in one safe place.</Text></View><IconButton icon="x" label="Close" onPress={onClose} /></View><Pressable accessibilityRole="button" accessibilityLabel="Scan a receipt" onPress={() => onNotify('Camera scanning is available in the mobile app. You can enter details below for now.')} style={styles.scan}><View style={styles.scanIcon}><Feather name="camera" size={21} color={colors.brandDark} /></View><View style={{ flex: 1 }}><Text style={type.label}>Scan a receipt</Text><Text style={type.bodySmall}>Take a photo and let ProofPilot organize it.</Text></View><Feather name="arrow-right" size={17} color={colors.ink} /></Pressable><Text style={styles.manualLabel}>OR ENTER MANUALLY</Text><Input label="PRODUCT NAME" value={form.name} onChangeText={(name) => onChange({ ...form, name })} placeholder="e.g. Samsung Monitor" /><View style={styles.formRow}><View style={styles.formFlex}><Input label="MERCHANT" value={form.merchant} onChangeText={(merchant) => onChange({ ...form, merchant })} placeholder="e.g. Best Buy" /></View><View style={styles.priceField}><Input label="PRICE" value={form.price} onChangeText={(price) => onChange({ ...form, price })} placeholder="$0.00" keyboardType="decimal-pad" /></View></View><Input label="PURCHASE DATE" value={form.date} onChangeText={(date) => onChange({ ...form, date })} placeholder="YYYY-MM-DD" /><Text style={styles.privacy}><Feather name="shield" size={14} color={colors.success} /> Your purchase details are private and only visible to you.</Text><Button label="Protect this purchase" icon="arrow-right" onPress={onSave} style={{ marginTop: spacing.md }} /></View></View></Modal>; }
-function PurchaseDetailModal({ purchase, onClose, onEdit, onNotify }: { purchase: Purchase | null; onClose: () => void; onEdit: () => void; onNotify: (message: string) => void }) { if (!purchase) return null; const tone = purchase.protectionStatus === 'protected' ? 'success' : purchase.protectionStatus === 'attention' ? 'warning' : 'neutral'; return <Modal transparent visible animationType="slide" onRequestClose={onClose}><View style={styles.shade}><ScrollView style={styles.detailSheet} contentContainerStyle={styles.detailContent}><View style={styles.handle} /><View style={styles.detailClose}><IconButton icon="x" label="Close purchase details" onPress={onClose} /></View><View style={[styles.detailArt, { backgroundColor: purchase.tint }]}><Feather name={purchase.icon} size={46} color={colors.inkSecondary} /></View><Text style={type.eyebrow}>{purchase.merchant.toUpperCase()}</Text><Text style={type.title}>{purchase.name}</Text><Text style={styles.detailPrice}>{formatMoney(purchase.price)} <Text style={styles.detailDate}>· Purchased {formatDate(purchase.purchaseDate)}</Text></Text><Badge label={protectionLabel(purchase.protectionStatus)} tone={tone} /><DetailPanel title="Return protection" body={purchase.returnDeadline ? `Return by ${formatDate(purchase.returnDeadline)}` : 'No return deadline added'} note="Check the original policy for exact return terms." /><DetailPanel title="Warranty" body={purchase.warrantyEnd ? `Coverage through ${formatDate(purchase.warrantyEnd)}` : 'No warranty information added'} note="Warranty dates are estimates until confirmed by your documents." /><DetailPanel title="Product information" body={`Serial / model · ${purchase.serial ?? 'Not added'}${purchase.model ? ` · ${purchase.model}` : ''}`} /><DetailPanel title="Documents" body={purchase.hasReceipt ? 'Receipt saved' : 'No receipt saved'} note="Your purchase documents will appear here." /><Pressable accessibilityRole="button" accessibilityLabel="Ask ProofPilot" onPress={() => onNotify('Ask ProofPilot is ready when AI services are connected.')} style={styles.ask}><View style={styles.askIcon}><Feather name="message-circle" size={18} color={colors.brandDark} /></View><View style={{ flex: 1 }}><Text style={type.label}>Ask ProofPilot</Text><Text style={type.bodySmall}>Get answers about this purchase.</Text></View><Feather name="arrow-right" size={17} color={colors.ink} /></Pressable><Button label="Edit purchase details" icon="edit-2" onPress={onEdit} variant="ghost" style={{ marginTop: spacing.sm }} /></ScrollView></View></Modal>; }
-function DetailPanel({ title, body, note }: { title: string; body: string; note?: string }) { return <Card style={styles.detailPanel}><Text style={type.heading}>{title}</Text><Text style={[type.body, { marginTop: spacing.sm }]}>{body}</Text>{note ? <Text style={[type.bodySmall, { marginTop: 6 }]}>{note}</Text> : null}</Card>; }
+function Sidebar({ groups, active, onSelect, userEmail, configured, onSignOut, itemCount }: { groups: Array<{ label: string; items: NavItem[] }>; active: Tab; onSelect: (tab: Tab) => void; userEmail: string | null; configured: boolean; onSignOut: () => void; itemCount: number }) {
+  return (
+    <View style={styles.sidebar}>
+      <View style={styles.brand}>
+        <View style={styles.logo}><Feather name="shield" size={20} color={colors.ink} /></View>
+        <View>
+          <Text style={styles.brandName}>ProofPilot</Text>
+          <Text style={styles.brandTag}>PURCHASE PROTECTION</Text>
+        </View>
+      </View>
+      <View style={styles.nav}>
+        {groups.map((group) => (
+          <View key={group.label} style={styles.navGroup}>
+            <Text style={styles.navGroupLabel}>{group.label}</Text>
+            {group.items.map((item) => {
+              const selectedTab = active === item.label;
+              return (
+                <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{ selected: selectedTab }} onPress={() => onSelect(item.label)} style={interactive([styles.navItem, selectedTab ? styles.navActive : null], { hover: { backgroundColor: selectedTab ? colors.brandMuted : 'rgba(21,34,54,0.045)' } })}>
+                  {selectedTab ? <View style={styles.navIndicator} /> : null}
+                  <Feather name={item.icon} size={18} color={selectedTab ? colors.brandDark : colors.muted} />
+                  <Text style={[styles.navText, selectedTab && styles.navTextActive]}>{item.label}</Text>
+                  {item.badge !== undefined && item.badge > 0 ? (
+                    <View style={[styles.navBadge, item.label === 'Deadlines' ? { backgroundColor: colors.warningSurface } : null]}>
+                      <Text style={[styles.navBadgeText, item.label === 'Deadlines' ? { color: colors.warning } : null]}>{item.badge}</Text>
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+      </View>
+      <View style={styles.sidebarBottom}>
+        <View style={styles.syncCard}>
+          <Feather name={configured ? 'cloud' : 'hard-drive'} size={16} color={colors.brandDark} />
+          <View style={{ flex: 1 }}>
+            <Text style={type.label}>{configured ? 'Cloud ready' : 'Local mode'}</Text>
+            <Text style={type.caption}>{configured ? 'Supabase configured' : `${itemCount} purchase${itemCount === 1 ? '' : 's'} stored on this device`}</Text>
+          </View>
+        </View>
+        <View style={styles.profile}>
+          <View style={styles.avatar}><Feather name={userEmail ? 'user' : 'smartphone'} size={15} color={colors.ink} /></View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text numberOfLines={1} style={type.label}>{userEmail ?? 'This device'}</Text>
+            <Text style={type.caption}>{userEmail ? 'Signed in' : 'No cloud account'}</Text>
+          </View>
+          {userEmail ? <IconButton icon="log-out" label="Sign out" size={34} tone="ghost" onPress={onSignOut} /> : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function Topbar({ query, onSearch, urgentCount, userEmail, compact, onDeadlines, onAccount }: { query: string; onSearch: (value: string) => void; urgentCount: number; userEmail: string | null; compact: boolean; onDeadlines: () => void; onAccount: () => void }) {
+  return (
+    <View style={styles.topbar}>
+      {compact ? (
+        <View style={styles.mobileBrand}>
+          <View style={styles.logoSmall}><Feather name="shield" size={15} color={colors.ink} /></View>
+          <Text style={styles.brandName}>ProofPilot</Text>
+        </View>
+      ) : null}
+      <View style={styles.search}>
+        <Feather name="search" size={17} color={colors.muted} />
+        <Input accessibilityLabel="Search your purchases" value={query} onChangeText={onSearch} placeholder={compact ? 'Search purchases' : 'Search purchases, merchants, serial numbers…'} containerStyle={{ flex: 1 }} style={styles.searchInput} />
+        {query ? <IconButton icon="x" label="Clear search" size={30} tone="ghost" onPress={() => onSearch('')} /> : null}
+      </View>
+      <View>
+        <IconButton icon="bell" label={urgentCount ? `View deadlines: ${urgentCount} urgent` : 'View deadlines'} onPress={onDeadlines} />
+        {urgentCount > 0 ? <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{urgentCount}</Text></View> : null}
+      </View>
+      <Pressable accessibilityRole="button" accessibilityLabel="Account and settings" onPress={onAccount} style={interactive(styles.topAvatar)}>
+        {userEmail ? <Text style={styles.avatarText}>{initialsFor(userEmail)}</Text> : <Feather name="smartphone" size={15} color={colors.ink} />}
+      </Pressable>
+    </View>
+  );
+}
+
+function BottomNav({ active, onSelect, urgentCount }: { active: Tab; onSelect: (tab: Tab) => void; urgentCount: number }) {
+  const items: NavItem[] = [
+    { label: 'Home', icon: 'home' },
+    { label: 'Purchases', icon: 'shopping-bag' },
+    { label: 'Deadlines', icon: 'calendar', badge: urgentCount },
+    { label: 'Vault', icon: 'archive' },
+    { label: 'Settings', icon: 'settings' },
+  ];
+  return (
+    <View style={styles.bottomNav}>
+      {items.map((item) => {
+        const selectedTab = active === item.label;
+        return (
+          <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{ selected: selectedTab }} onPress={() => onSelect(item.label)} style={interactive(styles.bottomItem, { hover: { backgroundColor: 'transparent' } })}>
+            <View style={[styles.bottomIconWrap, selectedTab && styles.bottomIconWrapActive]}>
+              <Feather name={item.icon} size={19} color={selectedTab ? colors.brandDark : colors.muted} />
+              {item.badge ? <View style={styles.bottomBadge}><Text style={styles.bottomBadgeText}>{item.badge}</Text></View> : null}
+            </View>
+            <Text style={[styles.bottomText, selectedTab && styles.bottomTextActive]}>{item.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
-  app: { flex: 1, backgroundColor: colors.canvas }, frame: { flex: 1, flexDirection: 'row', maxWidth: 1540, width: '100%', alignSelf: 'center' }, main: { flex: 1, minWidth: 0 }, sidebar: { width: sizing.sidebar, padding: spacing.xl, backgroundColor: colors.surface, borderRightWidth: 1, borderRightColor: colors.border }, brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.md }, logo: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand }, logoSmall: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand }, brandName: { fontSize: 18, fontWeight: '800', letterSpacing: -0.6, color: colors.ink }, brandTag: { fontSize: 8, fontWeight: '800', letterSpacing: 1.05, color: colors.subtle, marginTop: 2 }, nav: { marginTop: 46, gap: 5 }, navItem: { minHeight: 47, paddingHorizontal: spacing.md, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md }, navActive: { backgroundColor: colors.brandMuted }, navText: { ...type.body, flex: 1 }, navTextActive: { color: colors.ink, fontWeight: '800' }, sidebarBottom: { marginTop: 'auto' }, planCard: { padding: spacing.lg, backgroundColor: colors.surfaceMuted }, planIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: colors.brand, marginBottom: spacing.md }, planTitle: { ...type.label, fontSize: 14, marginBottom: 4 }, profile: { paddingTop: spacing.lg, marginTop: spacing.lg, borderTopWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, avatar: { width: 35, height: 35, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2E7DD' }, avatarText: { fontSize: 11, fontWeight: '800', color: colors.ink },
-  topbar: { height: 72, paddingHorizontal: spacing.xxl, backgroundColor: colors.surface, borderBottomWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.md }, mobileBrand: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, search: { height: sizing.touch, maxWidth: 575, flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.md, gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.canvas }, searchCompact: { minWidth: 0 }, searchInput: { flex: 1, height: '100%', borderWidth: 0, backgroundColor: 'transparent', paddingHorizontal: 0 }, topAvatar: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2E7DD' }, content: { width: '100%', maxWidth: sizing.contentMax, alignSelf: 'center', padding: spacing.xxl, paddingBottom: 72 }, contentPhone: { padding: spacing.lg, paddingBottom: 98 },
-  hero: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: spacing.xl, marginBottom: spacing.xxl }, heroPhone: { alignItems: 'stretch', flexDirection: 'column' }, heroCopy: { flex: 1, maxWidth: 670 }, heroDescription: { maxWidth: 620, marginTop: spacing.sm }, stats: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.xxl }, dashboardGrid: { flexDirection: 'row', gap: spacing.xl, marginBottom: spacing.xxl }, dashboardGridPhone: { flexDirection: 'column' }, dashboardPrimary: { flex: 1.12, minWidth: 0 }, dashboardSecondary: { flex: 0.88, minWidth: 0 }, purchaseGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
-  pageTitle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: spacing.lg, marginBottom: spacing.xxl }, pageSubtitle: { marginTop: spacing.sm }, filterRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg }, filterInput: { width: 220 }, deadlinePage: { marginTop: spacing.xl }, vaultHero: { marginVertical: spacing.xxl, padding: spacing.xxl, backgroundColor: colors.navy }, vaultIcon: { width: 50, height: 50, borderRadius: radius.lg, justifyContent: 'center', alignItems: 'center', backgroundColor: '#2D4661', marginBottom: spacing.lg }, vaultTitle: { fontSize: 22, fontWeight: '800', color: colors.surface }, vaultDescription: { color: '#C9D2DA', maxWidth: 450, marginVertical: spacing.sm }, categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }, categoryCard: { width: 170, padding: spacing.lg }, settings: { marginTop: spacing.xl, paddingHorizontal: spacing.lg }, setting: { minHeight: 70, borderBottomWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.md }, settingIcon: { height: 34, width: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceMuted },
-  bottomNav: { height: 66, flexDirection: 'row', backgroundColor: colors.surface, borderTopWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.xs }, bottomItem: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 2 }, bottomText: { fontSize: 10, color: colors.muted }, bottomTextActive: { color: colors.brandDark, fontWeight: '800' }, fab: { position: 'absolute', bottom: 82, right: spacing.lg, height: 56, width: 56, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand, ...shadows.floating }, pressed: { opacity: 0.74 },
-  shade: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16, 27, 39, 0.43)' }, sheet: { width: '100%', maxWidth: 530, maxHeight: '94%', alignSelf: 'center', padding: spacing.xl, paddingBottom: Platform.OS === 'web' ? spacing.xl : 38, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, backgroundColor: colors.canvas }, handle: { alignSelf: 'center', width: 38, height: 4, borderRadius: radius.pill, backgroundColor: colors.borderStrong, marginBottom: spacing.lg }, sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.lg }, scan: { minHeight: 68, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: '#DDE9D1', backgroundColor: colors.brandMuted }, scanIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DCEFC6' }, manualLabel: { ...type.eyebrow, textAlign: 'center', marginVertical: spacing.lg }, formRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }, formFlex: { flex: 1 }, priceField: { width: 122 }, privacy: { ...type.bodySmall, marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: 6 }, detailSheet: { maxWidth: 530, width: '100%', alignSelf: 'center', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, backgroundColor: colors.canvas }, detailContent: { padding: spacing.xl, paddingBottom: 36 }, detailClose: { alignItems: 'flex-end', marginTop: -spacing.md }, detailArt: { height: 150, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xl }, detailPrice: { fontSize: 17, fontWeight: '800', color: colors.ink, marginVertical: spacing.md }, detailDate: { ...type.bodySmall, fontWeight: '400' }, detailPanel: { padding: spacing.lg, marginTop: spacing.md }, ask: { padding: spacing.md, marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: radius.md, backgroundColor: colors.brandMuted }, askIcon: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DCEFC6' }, toast: { position: 'absolute', bottom: 28, maxWidth: 420, alignSelf: 'center', borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, backgroundColor: '#203125', flexDirection: 'row', gap: spacing.sm, alignItems: 'center', ...shadows.floating }, toastText: { color: colors.surface, fontSize: 12, flexShrink: 1 },
+  app: { flex: 1, backgroundColor: colors.canvas },
+  boot: { flex: 1, justifyContent: 'center', gap: spacing.xl, padding: spacing.xl },
+  frame: { flex: 1, flexDirection: 'row', width: '100%', alignSelf: 'center' },
+  main: { flex: 1, minWidth: 0 },
+  sidebar: { width: sizing.sidebar, paddingVertical: spacing.xl, paddingHorizontal: spacing.lg, backgroundColor: colors.surface, borderRightWidth: 1, borderRightColor: colors.border },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm },
+  logo: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand },
+  logoSmall: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand },
+  brandName: { fontSize: 17, fontWeight: '800', letterSpacing: -0.6, color: colors.ink },
+  brandTag: { fontSize: 8, fontWeight: '800', letterSpacing: 1.05, color: colors.subtle, marginTop: 2 },
+  nav: { marginTop: spacing.xl, flex: 1 },
+  navGroup: { marginBottom: spacing.lg },
+  navGroupLabel: { ...type.eyebrow, fontSize: 9.5, paddingHorizontal: spacing.md, marginBottom: 6 },
+  navItem: { minHeight: 44, paddingHorizontal: spacing.md, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md, position: 'relative', marginBottom: 2 },
+  navActive: { backgroundColor: colors.brandMuted },
+  navIndicator: { position: 'absolute', left: -spacing.lg, width: 3, height: 22, borderRadius: 2, backgroundColor: colors.brandDark },
+  navText: { ...type.body, flex: 1 },
+  navTextActive: { color: colors.ink, fontWeight: '800' },
+  navBadge: { minWidth: 22, height: 20, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  navBadgeText: { fontSize: 10.5, fontWeight: '800', color: colors.inkSecondary },
+  sidebarBottom: { gap: spacing.md },
+  syncCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
+  profile: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs },
+  avatar: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2E7DD' },
+  avatarText: { fontSize: 11, fontWeight: '800', color: colors.ink },
+  topbar: { minHeight: 68, paddingHorizontal: spacing.xl, backgroundColor: colors.surface, borderBottomWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  mobileBrand: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  search: { minHeight: sizing.touchCompact + 4, maxWidth: 560, flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.md, paddingRight: spacing.xs, gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.canvas },
+  searchInput: { borderWidth: 0, backgroundColor: 'transparent', paddingHorizontal: 0, height: '100%', minHeight: 0 },
+  bellBadge: { position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: colors.warning, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  bellBadgeText: { fontSize: 10, fontWeight: '800', color: colors.surface },
+  topAvatar: { minWidth: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2E7DD', paddingHorizontal: 6 },
+  content: { width: '100%', maxWidth: sizing.contentMax, alignSelf: 'center', padding: spacing.xl, paddingBottom: 72 },
+  contentPhone: { padding: spacing.lg, paddingBottom: 108 },
+  bottomNav: { height: 72, flexDirection: 'row', backgroundColor: colors.surface, borderTopWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.xs, paddingBottom: Platform.OS === 'ios' ? spacing.sm : 0 },
+  bottomItem: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  bottomIconWrap: { width: 46, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  bottomIconWrapActive: { backgroundColor: colors.brandMuted },
+  bottomBadge: { position: 'absolute', top: -3, right: 0, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: colors.warning, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  bottomBadgeText: { fontSize: 9, fontWeight: '800', color: colors.surface },
+  bottomText: { fontSize: 10.5, color: colors.muted },
+  bottomTextActive: { color: colors.brandDark, fontWeight: '800' },
+  fab: { position: 'absolute', bottom: 88, right: spacing.lg, height: 56, width: 56, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand, ...shadows.floating },
+  toast: { position: 'absolute', bottom: 28, maxWidth: 430, alignSelf: 'center', borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, backgroundColor: '#203125', flexDirection: 'row', gap: spacing.sm, alignItems: 'center', ...shadows.floating },
+  toastPhone: { bottom: 100 },
+  toastText: { color: colors.surface, fontSize: 12.5, flexShrink: 1 },
 });
