@@ -22,7 +22,7 @@ export type PurchaseDocument = {
 };
 
 export type Purchase = {
-  id: number;
+  id: number | string;
   name: string;
   merchant: string;
   price: number | null;
