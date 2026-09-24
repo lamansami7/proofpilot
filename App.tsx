@@ -9,6 +9,8 @@ import { Badge, Button, Card, EmptyState, IconButton, Input, SectionHeader } fro
 import { demoPurchases } from './src/data/demoPurchases';
 import { colors, radius, shadows, sizing, spacing, type } from './src/design/tokens';
 import { useBreakpoint } from './src/hooks/useBreakpoint';
+import { useSession } from './src/hooks/useSession';
+import { AuthScreen } from './src/components/authScreen';
 import { actionNeeded, formatDate, formatMoney, normalizedDeadlines, protectedPurchaseCount, protectedValue, protectionLabel, recentPurchases, upcomingDeadlines, urgentDeadlines } from './src/lib/purchaseSelectors';
 import type { FeatherIconName, Purchase } from './src/types/purchase';
 
@@ -18,6 +20,7 @@ const navigation: Array<{ label: Tab; icon: FeatherIconName }> = [{ label: 'Home
 
 export default function App() {
   const viewport = useBreakpoint();
+  const session = useSession();
   const [tab, setTab] = useState<Tab>('Home');
   const [items, setItems] = useState<Purchase[]>(demoPurchases);
   const [selected, setSelected] = useState<Purchase | null>(null);
@@ -33,6 +36,7 @@ export default function App() {
   const actions = useMemo(() => actionNeeded(items), [items]);
   const save = (purchase: Purchase) => { setItems((current) => editingPurchase ? current.map((item) => item.id === purchase.id ? purchase : item) : [purchase, ...current]); setEditingPurchase(null); setTab('Purchases'); notify(editingPurchase ? 'Purchase details updated.' : 'Purchase protected and added to your vault.'); };
   const openPurchase = (purchase: Purchase) => setSelected(purchase);
+  if (session.configured && !session.loading && !session.user) return <SafeAreaView style={styles.app}><StatusBar style="dark" /><AuthScreen onSubmit={async (email, password, signUp) => { const { error } = signUp ? await session.signUp(email, password) : await session.signIn(email, password); if (error) throw error; }} /></SafeAreaView>;
   return <SafeAreaView style={styles.app}><StatusBar style="dark" /><View style={styles.frame}>
     {!viewport.isPhone ? <Sidebar active={tab} count={urgentDeadlines(items).length} itemCount={items.length} onSelect={setTab} /> : null}
     <View style={styles.main}><Topbar query={query} setQuery={setQuery} onDeadlines={() => setTab('Deadlines')} compact={viewport.isPhone} />
