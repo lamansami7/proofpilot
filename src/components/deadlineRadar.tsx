@@ -1,25 +1,188 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, radius, spacing, type } from '../design/tokens';
-import { deadlineTypeLabel, formatDate, groupDeadlines, type NormalizedDeadline } from '../lib/purchaseSelectors';
+import { deadlineTypeLabel, formatDate, groupDeadlines, type DeadlineGroup, type NormalizedDeadline } from '../lib/purchaseSelectors';
 import type { DeadlineType, Purchase } from '../types/purchase';
-import { Badge, Button, Card, EmptyState, IconButton, Input, SectionHeader } from './ui';
+import { Badge, Button, Card, Chip, EmptyState, Input, Sheet, type BadgeTone } from './ui';
+import { ProductTile } from './purchaseComponents';
 
 type Filter = 'all' | DeadlineType;
 type Sort = 'urgency' | 'date' | 'purchase';
-const filters: Array<[Filter, string]> = [['all', 'All'], ['return', 'Returns'], ['warranty', 'Warranties'], ['rebate', 'Rebates'], ['custom', 'Custom']];
-const groups: Array<{ id: 'overdue' | 'today' | 'week' | 'month' | 'later'; title: string; detail: string }> = [{ id: 'overdue', title: 'Overdue', detail: 'Needs attention' }, { id: 'today', title: 'Today', detail: 'Due now' }, { id: 'week', title: 'This week', detail: 'Next 7 days' }, { id: 'month', title: 'This month', detail: 'Later this month' }, { id: 'later', title: 'Later', detail: 'Future deadlines' }];
-const tone = (status: NormalizedDeadline['status']) => status === 'overdue' || status === 'today' ? 'danger' : status === 'urgent' ? 'warning' : status === 'upcoming' ? 'success' : 'neutral';
+const filters: Array<[Filter, string]> = [['all', 'All deadlines'], ['return', 'Returns'], ['warranty', 'Warranties'], ['rebate', 'Rebates'], ['custom', 'Custom']];
+const groupOrder: Array<{ id: DeadlineGroup; title: string; detail: string }> = [
+  { id: 'overdue', title: 'Overdue', detail: 'Needs attention now' },
+  { id: 'today', title: 'Today', detail: 'Due by midnight' },
+  { id: 'week', title: 'This week', detail: 'Next 7 days' },
+  { id: 'month', title: 'This month', detail: 'Later this month' },
+  { id: 'later', title: 'Later', detail: 'Future deadlines' },
+];
+const tone = (status: NormalizedDeadline['status']): BadgeTone => status === 'overdue' || status === 'today' ? 'danger' : status === 'urgent' ? 'warning' : 'success';
 const days = (deadline: NormalizedDeadline) => deadline.days < 0 ? `${Math.abs(deadline.days)} days overdue` : deadline.days === 0 ? 'Due today' : deadline.days === 1 ? '1 day remaining' : `${deadline.days} days remaining`;
 
 export function DeadlineRadar({ deadlines, onOpenPurchase, onAdd }: { deadlines: NormalizedDeadline[]; onOpenPurchase: (purchase: Purchase) => void; onAdd: () => void }) {
-  const [filter, setFilter] = useState<Filter>('all'); const [sort, setSort] = useState<Sort>('urgency'); const [query, setQuery] = useState(''); const [selected, setSelected] = useState<NormalizedDeadline | null>(null);
-  const filtered = useMemo(() => deadlines.filter((deadline) => (filter === 'all' || deadline.type === filter) && `${deadline.purchase.name} ${deadline.purchase.merchant} ${deadlineTypeLabel(deadline.type)}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => sort === 'purchase' ? a.purchase.name.localeCompare(b.purchase.name) : sort === 'date' ? a.date.localeCompare(b.date) : a.days - b.days || a.purchase.name.localeCompare(b.purchase.name)), [deadlines, filter, query, sort]);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [sort, setSort] = useState<Sort>('urgency');
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<NormalizedDeadline | null>(null);
+
+  const filtered = useMemo(() => deadlines
+    .filter((deadline) => (filter === 'all' || deadline.type === filter) && `${deadline.purchase.name} ${deadline.purchase.merchant} ${deadlineTypeLabel(deadline.type)}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => sort === 'purchase' ? a.purchase.name.localeCompare(b.purchase.name) : sort === 'date' ? a.date.localeCompare(b.date) : a.days - b.days || a.purchase.name.localeCompare(b.purchase.name)), [deadlines, filter, query, sort]);
   const grouped = useMemo(() => groupDeadlines(filtered), [filtered]);
-  return <><View style={styles.title}><View><Text style={type.eyebrow}>STAY ONE STEP AHEAD</Text><Text style={type.title}>Deadline Radar</Text><Text style={[type.body, styles.subtitle]}>One calm, organized view of the dates that protect your purchases.</Text></View><Button label="Protect a purchase" icon="plus" onPress={onAdd} /></View><Card style={styles.controls}><Input accessibilityLabel="Search deadlines" value={query} onChangeText={setQuery} placeholder="Search product, merchant, or deadline type" style={styles.search} /><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>{filters.map(([value, label]) => <Pressable accessibilityRole="button" accessibilityState={{ selected: filter === value }} key={value} onPress={() => setFilter(value)} style={[styles.filter, filter === value && styles.filterActive]}><Text style={[styles.filterText, filter === value && styles.filterTextActive]}>{label}</Text></Pressable>)}</ScrollView><View style={styles.sortRow}><Text style={type.bodySmall}>Sort by</Text>{(['urgency', 'date', 'purchase'] as Sort[]).map((value) => <Pressable accessibilityRole="button" accessibilityState={{ selected: sort === value }} key={value} onPress={() => setSort(value)} style={[styles.sort, sort === value && styles.sortActive]}><Text style={[styles.sortText, sort === value && styles.sortTextActive]}>{value[0].toUpperCase() + value.slice(1)}</Text></Pressable>)}</View></Card>{filtered.length === 0 ? <EmptyState icon="check-circle" title="You’re all caught up" message="ProofPilot will track future return, warranty, rebate, and custom deadlines here." actionLabel="Protect a purchase" onAction={onAdd} /> : <View style={styles.groups}>{groups.map((group) => <View key={group.id}><SectionHeader title={group.title} /><Text style={styles.groupDetail}>{group.detail} · {grouped[group.id].length} deadline{grouped[group.id].length === 1 ? '' : 's'}</Text>{grouped[group.id].length ? <View style={styles.grid}>{grouped[group.id].map((deadline) => <DeadlineCard key={deadline.id} deadline={deadline} onPress={() => setSelected(deadline)} />)}</View> : <Card style={styles.emptyGroup}><Text style={type.bodySmall}>Nothing scheduled in this window.</Text></Card>}</View>)}</View>}<DeadlineDetail deadline={selected} onClose={() => setSelected(null)} onOpenPurchase={(purchase) => { setSelected(null); onOpenPurchase(purchase); }} /></>;
+  const counts = useMemo(() => groupDeadlines(deadlines), [deadlines]);
+  const overdueCount = counts.overdue.length + counts.today.length;
+
+  if (deadlines.length === 0) {
+    return (
+      <>
+        <PageHeader onAdd={onAdd} />
+        <EmptyState icon="calendar" title="No deadlines tracked yet" message="When you protect a purchase with a return window or warranty date, it appears here automatically — grouped by urgency." actionLabel="Protect a purchase" onAction={onAdd} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader onAdd={onAdd} />
+      <View style={styles.summaryRow}>
+        <SummaryPill tone={overdueCount ? 'danger' : 'neutral'} label={String(counts.overdue.length + counts.today.length)} caption="need action" />
+        <SummaryPill tone={counts.week.length ? 'warning' : 'neutral'} label={String(counts.week.length)} caption="this week" />
+        <SummaryPill tone="neutral" label={String(counts.month.length)} caption="this month" />
+        <SummaryPill tone="neutral" label={String(counts.later.length)} caption="later" />
+      </View>
+
+      <Card style={styles.controls}>
+        <Input accessibilityLabel="Search deadlines" value={query} onChangeText={setQuery} placeholder="Search product, merchant, or deadline type" />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+          {filters.map(([value, label]) => <Chip key={value} label={label} selected={filter === value} onPress={() => setFilter(value)} />)}
+        </ScrollView>
+        <View style={styles.sortRow}>
+          <Text style={type.caption}>Sort by</Text>
+          {(['urgency', 'date', 'purchase'] as Sort[]).map((value) => (
+            <Chip key={value} label={value[0].toUpperCase() + value.slice(1)} selected={sort === value} onPress={() => setSort(value)} />
+          ))}
+        </View>
+      </Card>
+
+      {filtered.length === 0 ? (
+        <EmptyState compact icon="search" title="No deadlines match" message="Try a different search or filter — your other deadlines are still being tracked." />
+      ) : (
+        <View style={styles.groups}>
+          {groupOrder.filter((group) => grouped[group.id].length > 0).map((group) => (
+            <View key={group.id}>
+              <View style={styles.groupHeader}>
+                <Text style={type.heading}>{group.title}</Text>
+                <Text style={type.bodySmall}>{group.detail} · {grouped[group.id].length}</Text>
+              </View>
+              <View style={styles.grid}>
+                {grouped[group.id].map((deadline) => <DeadlineCard key={deadline.id} deadline={deadline} onPress={() => setSelected(deadline)} />)}
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      <Sheet visible={Boolean(selected)} onClose={() => setSelected(null)} eyebrow="DEADLINE DETAIL" title={selected ? deadlineTypeLabel(selected.type) : undefined} subtitle={selected ? `${days(selected)} · ${formatDate(selected.date)}` : undefined}>
+        {selected ? (
+          <>
+            <View style={styles.detailProduct}>
+              <ProductTile purchase={selected.purchase} size={46} />
+              <View style={{ flex: 1 }}>
+                <Text style={type.label}>{selected.purchase.name}</Text>
+                <Text style={type.bodySmall}>{selected.purchase.merchant}</Text>
+              </View>
+              <Badge label={days(selected)} tone={tone(selected.status)} />
+            </View>
+            <Card style={styles.detailCard}>
+              <DetailRow label="Deadline" value={deadlineTypeLabel(selected.type)} />
+              <DetailRow label="Exact date" value={formatDate(selected.date)} />
+              <DetailRow label="Purchase" value={`${selected.purchase.name} · ${selected.purchase.merchant}`} />
+              <DetailRow label="Documents on file" value={selected.purchase.documents.length ? selected.purchase.documents.map((document) => document.name).join(', ') : 'None added'} />
+            </Card>
+            <View style={styles.reminderNote}>
+              <Feather name="bell-off" size={15} color={colors.inkSecondary} />
+              <Text style={type.bodySmall}>Reminders are not connected in this build — nothing has been scheduled or sent. Track this date here until notifications are enabled.</Text>
+            </View>
+            <Button label="Open purchase record" icon="arrow-right" onPress={() => { onOpenPurchase(selected.purchase); setSelected(null); }} style={{ marginTop: spacing.lg }} fullWidth />
+          </>
+        ) : null}
+      </Sheet>
+    </>
+  );
 }
-function DeadlineCard({ deadline, onPress }: { deadline: NormalizedDeadline; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={`View ${deadlineTypeLabel(deadline.type)} for ${deadline.purchase.name}`} onPress={onPress} style={({ pressed }) => [styles.cardPress, pressed && styles.pressed]}><Card style={styles.deadlineCard}><View style={styles.cardTop}><View style={[styles.icon, { backgroundColor: deadline.purchase.tint }]}><Feather name={deadline.purchase.icon} size={20} color={colors.inkSecondary} /></View><Badge label={days(deadline)} tone={tone(deadline.status)} /></View><Text style={[type.eyebrow, { marginTop: spacing.lg }]}>{deadlineTypeLabel(deadline.type)}</Text><Text numberOfLines={1} style={styles.product}>{deadline.purchase.name}</Text><Text numberOfLines={1} style={type.bodySmall}>{deadline.purchase.merchant}</Text><View style={styles.date}><Feather name="calendar" size={14} color={colors.muted} /><Text style={type.label}>{formatDate(deadline.date)}</Text></View><View style={styles.view}><Text style={styles.viewText}>View details</Text><Feather name="arrow-up-right" size={15} color={colors.brandDark} /></View></Card></Pressable>; }
-function DeadlineDetail({ deadline, onClose, onOpenPurchase }: { deadline: NormalizedDeadline | null; onClose: () => void; onOpenPurchase: (purchase: Purchase) => void }) { if (!deadline) return null; return <Modal transparent visible animationType="slide" onRequestClose={onClose}><View style={styles.shade}><View style={styles.sheet}><View style={styles.handle} /><View style={styles.sheetHeader}><View><Text style={type.eyebrow}>DEADLINE DETAIL</Text><Text style={type.heading}>{deadlineTypeLabel(deadline.type)}</Text></View><IconButton icon="x" label="Close deadline details" onPress={onClose} /></View><View style={[styles.icon, { backgroundColor: deadline.purchase.tint }]}><Feather name={deadline.purchase.icon} size={22} color={colors.inkSecondary} /></View><Text style={styles.sheetProduct}>{deadline.purchase.name}</Text><Text style={type.body}>{deadline.purchase.merchant}</Text><Card style={styles.detailCard}><Detail label="Deadline type" value={deadlineTypeLabel(deadline.type)} /><Detail label="Exact date" value={formatDate(deadline.date)} /><Detail label="Status" value={days(deadline)} /><Detail label="Related documents" value={deadline.purchase.documents.length ? deadline.purchase.documents.map((document) => document.name).join(', ') : 'No documents added'} /></Card><Text style={[type.bodySmall, { marginTop: spacing.lg }]}>Reminder scheduling will be available when notifications are connected. No reminder has been sent.</Text><Button label="View purchase" icon="arrow-right" onPress={() => onOpenPurchase(deadline.purchase)} style={{ marginTop: spacing.xl }} /></View></View></Modal>; }
-function Detail({ label, value }: { label: string; value: string }) { return <View style={styles.detailRow}><Text style={type.bodySmall}>{label}</Text><Text style={[type.label, styles.detailValue]}>{value}</Text></View>; }
-const styles = StyleSheet.create({ title: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: spacing.lg, marginBottom: spacing.xl }, subtitle: { marginTop: spacing.sm, maxWidth: 570 }, controls: { padding: spacing.lg, marginBottom: spacing.xxl }, search: { width: '100%' }, filterRow: { gap: spacing.sm, paddingTop: spacing.md }, filter: { minHeight: 38, justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted }, filterActive: { backgroundColor: colors.brand }, filterText: { ...type.label, color: colors.inkSecondary }, filterTextActive: { color: colors.ink }, sortRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'center', marginTop: spacing.lg }, sort: { minHeight: 34, paddingHorizontal: spacing.md, justifyContent: 'center', borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border }, sortActive: { borderColor: colors.brandDark, backgroundColor: colors.brandMuted }, sortText: { ...type.bodySmall }, sortTextActive: { color: colors.brandDark, fontWeight: '800' }, groups: { gap: spacing.xxl }, groupDetail: { ...type.bodySmall, marginTop: -spacing.sm, marginBottom: spacing.md }, emptyGroup: { padding: spacing.md, backgroundColor: colors.surfaceMuted, borderStyle: 'dashed' }, grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md }, cardPress: { flexBasis: 245, flexGrow: 1, maxWidth: 390 }, deadlineCard: { padding: spacing.lg, minHeight: 230 }, cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.sm }, icon: { height: 43, width: 43, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' }, product: { ...type.heading, marginTop: 3 }, date: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.md }, view: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 'auto', paddingTop: spacing.lg }, viewText: { ...type.label, color: colors.brandDark }, pressed: { opacity: 0.75 }, shade: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16, 27, 39, 0.43)' }, sheet: { width: '100%', maxWidth: 520, alignSelf: 'center', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, backgroundColor: colors.canvas, padding: spacing.xl, paddingBottom: 38 }, handle: { width: 38, height: 4, alignSelf: 'center', borderRadius: radius.pill, backgroundColor: colors.borderStrong, marginBottom: spacing.lg }, sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.lg }, sheetProduct: { fontSize: 24, fontWeight: '800', color: colors.ink, marginTop: spacing.lg }, detailCard: { padding: spacing.lg, marginTop: spacing.xl }, detailRow: { paddingVertical: spacing.sm, borderBottomWidth: 1, borderColor: colors.border, gap: 4 }, detailValue: { color: colors.inkSecondary } });
+
+function PageHeader({ onAdd }: { onAdd: () => void }) {
+  return (
+    <View style={styles.title}>
+      <View style={{ flex: 1 }}>
+        <Text style={type.eyebrow}>STAY ONE STEP AHEAD</Text>
+        <Text style={type.display}>Deadline Radar</Text>
+        <Text style={[type.body, styles.subtitle]}>Every return window, warranty, and custom date — sorted by how soon it needs you.</Text>
+      </View>
+      <Button label="Protect a purchase" icon="plus" onPress={onAdd} />
+    </View>
+  );
+}
+
+function SummaryPill({ label, caption, tone: pillTone }: { label: string; caption: string; tone: 'danger' | 'warning' | 'neutral' }) {
+  const backgrounds = { danger: colors.dangerSurface, warning: colors.warningSurface, neutral: colors.surface };
+  const text = { danger: colors.danger, warning: colors.warning, neutral: colors.ink };
+  return (
+    <View style={[styles.summaryPill, { backgroundColor: backgrounds[pillTone] }]}>
+      <Text style={[styles.summaryValue, { color: text[pillTone] }]}>{label}</Text>
+      <Text style={type.caption}>{caption}</Text>
+    </View>
+  );
+}
+
+function DeadlineCard({ deadline, onPress }: { deadline: NormalizedDeadline; onPress: () => void }) {
+  return (
+    <Card onPress={onPress} accessibilityLabel={`View ${deadlineTypeLabel(deadline.type)} for ${deadline.purchase.name}, ${days(deadline)}`} style={styles.deadlineCard}>
+      <View style={styles.cardTop}>
+        <ProductTile purchase={deadline.purchase} />
+        <Badge label={days(deadline)} tone={tone(deadline.status)} />
+      </View>
+      <Text style={[type.caption, styles.cardType]}>{deadlineTypeLabel(deadline.type).toUpperCase()}</Text>
+      <Text numberOfLines={1} style={styles.product}>{deadline.purchase.name}</Text>
+      <Text numberOfLines={1} style={type.bodySmall}>{deadline.purchase.merchant}</Text>
+      <View style={styles.date}>
+        <Feather name="calendar" size={14} color={colors.muted} />
+        <Text style={type.label}>{formatDate(deadline.date)}</Text>
+      </View>
+    </Card>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.detailRow}>
+      <Text style={type.bodySmall}>{label}</Text>
+      <Text style={[type.label, styles.detailValue]}>{value}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  title: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: spacing.lg, marginBottom: spacing.xl, flexWrap: 'wrap' },
+  subtitle: { marginTop: spacing.sm, maxWidth: 570 },
+  summaryRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg, flexWrap: 'wrap' },
+  summaryPill: { minWidth: 108, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, gap: 2 },
+  summaryValue: { fontSize: 22, fontWeight: '800', letterSpacing: -0.7 },
+  controls: { padding: spacing.lg, marginBottom: spacing.xl, gap: spacing.md },
+  filterRow: { gap: spacing.sm },
+  sortRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'center' },
+  groups: { gap: spacing.xl },
+  groupHeader: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm, marginBottom: spacing.md },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  deadlineCard: { padding: spacing.lg, flexBasis: 245, flexGrow: 1, maxWidth: 400 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm },
+  cardType: { marginTop: spacing.lg },
+  product: { ...type.heading, fontSize: 16, marginTop: 3 },
+  date: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: spacing.md },
+  detailProduct: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  detailCard: { padding: spacing.lg, marginTop: spacing.lg },
+  detailRow: { paddingVertical: spacing.sm, borderBottomWidth: 1, borderColor: colors.border, gap: 4 },
+  detailValue: { color: colors.inkSecondary, textAlign: 'right', flexShrink: 1 },
+  reminderNote: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', marginTop: spacing.lg, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
+});
