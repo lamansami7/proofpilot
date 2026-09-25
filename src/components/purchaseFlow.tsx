@@ -4,8 +4,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, radius, spacing, type } from '../design/tokens';
+import { persistDocumentUri } from '../lib/documents';
 import { deriveProtection, formatDate, formatMoney, isValidIsoDate, isoDate, isoDaysFrom, protectionLabel } from '../lib/purchaseSelectors';
-import type { DocumentKind, FeatherIconName, Purchase, PurchaseDocument } from '../types/purchase';
+import type { DeadlineType, DocumentKind, FeatherIconName, Purchase, PurchaseDeadline, PurchaseDocument } from '../types/purchase';
 import { Badge, Banner, Button, Chip, IconButton, Input, interactive, Sheet } from './ui';
 
 type Form = { name: string; merchant: string; price: string; purchaseDate: string; category: string; serial: string; model: string; returnDeadline: string; warrantyEnd: string; warrantyProvider: string; notes: string };
@@ -20,15 +21,18 @@ const tints = ['#E7EDFF', '#FAE8DB', '#E3F1E9', '#FBE9EA', '#F1E8FA', '#EAF2F8',
 
 function formFor(purchase: Purchase): Form { return { name: purchase.name, merchant: purchase.merchant, price: purchase.price?.toString() ?? '', purchaseDate: purchase.purchaseDate ?? '', category: purchase.category, serial: purchase.serial ?? '', model: purchase.model ?? '', returnDeadline: purchase.returnDeadline ?? '', warrantyEnd: purchase.warrantyEnd ?? '', warrantyProvider: purchase.warrantyProvider ?? '', notes: purchase.notes ?? '' }; }
 function sanitizePrice(value: string): string { const cleaned = value.replace(/[^0-9.]/g, ''); const firstDot = cleaned.indexOf('.'); if (firstDot === -1) return cleaned; return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '').slice(0, 2); }
-function documentFor(asset: DocumentPicker.DocumentPickerAsset, kind: DocumentKind): PurchaseDocument { return { id: `document-${Date.now()}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, uri: asset.uri ?? null, addedAt: isoDate(new Date()) }; }
+async function documentFor(asset: DocumentPicker.DocumentPickerAsset, kind: DocumentKind): Promise<PurchaseDocument> {
+  const uri = asset.uri ? await persistDocumentUri(asset.uri, asset.name) : null;
+  return { id: `document-${Date.now()}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, uri, addedAt: isoDate(new Date()) };
+}
 
-function purchaseFromForm(form: Form, documents: PurchaseDocument[], defaultReturnDays: number, existing?: Purchase): Purchase {
+function purchaseFromForm(form: Form, documents: PurchaseDocument[], customDeadlines: PurchaseDeadline[], existing?: Purchase): Purchase {
   const price = Number(form.price);
   const returnDeadline = form.returnDeadline || null;
   const warrantyEnd = form.warrantyEnd || null;
   const hasReceipt = documents.some((document) => document.kind === 'receipt');
   const id = existing?.id ?? `local-${Date.now()}`;
-  const carriedDeadlines = (existing?.deadlines ?? []).filter((deadline) => deadline.type === 'custom' || deadline.type === 'rebate');
+  const carriedDeadlines = customDeadlines;
   return {
     id,
     name: form.name.trim(), merchant: form.merchant.trim(), price, purchaseDate: form.purchaseDate || null,
@@ -48,17 +52,19 @@ function purchaseFromForm(form: Form, documents: PurchaseDocument[], defaultRetu
   };
 }
 
-export function PurchaseFlow({ visible, initialPurchase, merchants, defaultReturnDays, onClose, onSave, onDone }: { visible: boolean; initialPurchase: Purchase | null; merchants: string[]; defaultReturnDays: number; onClose: () => void; onSave: (purchase: Purchase) => void; onDone: (purchase: Purchase) => void }) {
+export function PurchaseFlow({ visible, initialPurchase, merchants, defaultReturnDays, onClose, onSave, onDone }: { visible: boolean; initialPurchase: Purchase | null; merchants: string[]; defaultReturnDays: number; onClose: () => void; onSave: (purchase: Purchase) => Promise<void>; onDone: (purchase: Purchase) => void }) {
   const editing = Boolean(initialPurchase);
   const [step, setStep] = useState<FlowStep>('start');
   const [form, setForm] = useState<Form>(blankForm);
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
   const [documents, setDocuments] = useState<PurchaseDocument[]>([]);
+  const [customDeadlines, setCustomDeadlines] = useState<PurchaseDeadline[]>([]);
   const [upload, setUpload] = useState<UploadState>('idle');
   const [pendingKind, setPendingKind] = useState<DocumentKind>('receipt');
   const [saved, setSaved] = useState<Purchase | null>(null);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'error'>('idle');
 
-  useEffect(() => { if (visible) { setForm(initialPurchase ? formFor(initialPurchase) : blankForm); setDocuments(initialPurchase?.documents ?? []); setErrors({}); setUpload('idle'); setSaved(null); setStep(initialPurchase ? 'form' : 'start'); } }, [visible, initialPurchase]);
+  useEffect(() => { if (visible) { setForm(initialPurchase ? formFor(initialPurchase) : blankForm); setDocuments(initialPurchase?.documents ?? []); setCustomDeadlines((initialPurchase?.deadlines ?? []).filter((deadline) => deadline.type === 'custom' || deadline.type === 'rebate')); setErrors({}); setUpload('idle'); setSaved(null); setSaveState('idle'); setStep(initialPurchase ? 'form' : 'start'); } }, [visible, initialPurchase]);
 
   const update = (field: Field, value: string) => { setForm((current) => ({ ...current, [field]: value })); setErrors((current) => ({ ...current, [field]: undefined })); };
 
@@ -67,7 +73,8 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true, multiple: false });
       if (result.canceled) { setUpload('idle'); return; }
-      setDocuments((current) => (kind === 'receipt' ? [...current.filter((document) => document.kind !== 'receipt'), documentFor(result.assets[0], kind)] : [...current, documentFor(result.assets[0], kind)]));
+      const document = await documentFor(result.assets[0], kind);
+      setDocuments((current) => (kind === 'receipt' ? [...current.filter((item) => item.kind !== 'receipt'), document] : [...current, document]));
       setUpload('success');
     } catch { setUpload('error'); }
   };
@@ -80,7 +87,9 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (result.canceled) { setUpload('idle'); return; }
       const asset = result.assets[0];
-      setDocuments((current) => [...current.filter((document) => document.kind !== 'receipt'), { id: `receipt-${Date.now()}`, name: asset.fileName ?? 'Scanned receipt.jpg', kind: 'receipt', mimeType: asset.mimeType ?? 'image/jpeg', uri: asset.uri ?? null, addedAt: isoDate(new Date()) }]);
+      const name = asset.fileName ?? 'Scanned receipt.jpg';
+      const uri = asset.uri ? await persistDocumentUri(asset.uri, name) : null;
+      setDocuments((current) => [...current.filter((document) => document.kind !== 'receipt'), { id: `receipt-${Date.now()}`, name, kind: 'receipt', mimeType: asset.mimeType ?? 'image/jpeg', uri, addedAt: isoDate(new Date()) }]);
       setUpload('success'); setStep('form');
     } catch { setUpload('error'); }
   };
@@ -96,16 +105,16 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
     return Object.keys(next).length === 0;
   };
 
-  const save = () => { const purchase = purchaseFromForm(form, documents, defaultReturnDays, initialPurchase ?? undefined); setSaved(purchase); onSave(purchase); setStep('success'); };
+  const save = async () => { const purchase = purchaseFromForm(form, documents, customDeadlines, initialPurchase ?? undefined); setSaveState('saving'); try { await onSave(purchase); setSaved(purchase); setSaveState('idle'); setStep('success'); } catch { setSaveState('error'); } };
   const merchantSuggestions = useMemo(() => { const typed = form.merchant.trim().toLowerCase(); return merchants.filter((merchant) => !typed || merchant.toLowerCase().includes(typed)).filter((merchant) => merchant.toLowerCase() !== typed).slice(0, 3); }, [merchants, form.merchant]);
 
   return (
     <Sheet visible={visible} onClose={onClose} wide eyebrow={editing ? 'EDIT RECORD' : 'NEW RECORD'} title={editing ? 'Edit purchase' : 'Protect a purchase'} subtitle={editing ? 'Keep this purchase record accurate and complete.' : 'Receipts, return windows, and warranties — one safe place.'}>
       {step === 'start' ? <StartStep onManual={() => setStep('form')} onScan={scanReceipt} onUpload={() => pickDocument('receipt')} upload={upload} /> : null}
       {step === 'form' ? (
-        <FormStep form={form} errors={errors} documents={documents} upload={upload} pendingKind={pendingKind} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { if (validate()) setStep('review'); }} />
+        <FormStep form={form} errors={errors} documents={documents} upload={upload} pendingKind={pendingKind} customDeadlines={customDeadlines} onCustomDeadlinesChange={setCustomDeadlines} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { if (validate()) setStep('review'); }} />
       ) : null}
-      {step === 'review' ? <ReviewStep purchase={purchaseFromForm(form, documents, defaultReturnDays, initialPurchase ?? undefined)} onEdit={() => setStep('form')} onSave={save} /> : null}
+      {step === 'review' ? <ReviewStep purchase={purchaseFromForm(form, documents, customDeadlines, initialPurchase ?? undefined)} onEdit={() => setStep('form')} onSave={save} saveState={saveState} /> : null}
       {step === 'success' && saved ? <SuccessStep purchase={saved} editing={editing} onDone={() => onDone(saved)} /> : null}
     </Sheet>
   );
@@ -147,8 +156,14 @@ function DateField({ label, value, error, onChange, hint, children }: { label: s
   );
 }
 
-function FormStep({ form, errors, documents, upload, pendingKind, update, onPickDocument, onRemoveDocument, merchantSuggestions, defaultReturnDays, onNext }: { form: Form; errors: Partial<Record<Field, string>>; documents: PurchaseDocument[]; upload: UploadState; pendingKind: DocumentKind; update: (field: Field, value: string) => void; onPickDocument: (kind: DocumentKind) => void; onRemoveDocument: (id: string) => void; merchantSuggestions: string[]; defaultReturnDays: number; onNext: () => void }) {
+function FormStep({ form, errors, documents, upload, pendingKind, customDeadlines, onCustomDeadlinesChange, update, onPickDocument, onRemoveDocument, merchantSuggestions, defaultReturnDays, onNext }: { form: Form; errors: Partial<Record<Field, string>>; documents: PurchaseDocument[]; upload: UploadState; pendingKind: DocumentKind; customDeadlines: PurchaseDeadline[]; onCustomDeadlinesChange: (deadlines: PurchaseDeadline[]) => void; update: (field: Field, value: string) => void; onPickDocument: (kind: DocumentKind) => void; onRemoveDocument: (id: string) => void; merchantSuggestions: string[]; defaultReturnDays: number; onNext: () => void }) {
   const [kindPickerOpen, setKindPickerOpen] = useState(false);
+  const [deadlineTitle, setDeadlineTitle] = useState('');
+  const [deadlineDate, setDeadlineDate] = useState('');
+  const [deadlineType, setDeadlineType] = useState<Extract<DeadlineType, 'rebate' | 'custom'>>('custom');
+  const deadlineValid = Boolean(deadlineTitle.trim() && isValidIsoDate(deadlineDate));
+  const savedDeadlinesValid = customDeadlines.every((deadline) => Boolean(deadline.title.trim() && isValidIsoDate(deadline.date)));
+  const addDeadline = () => { if (!deadlineValid) return; onCustomDeadlinesChange([...customDeadlines, { id: `deadline-${Date.now()}`, title: deadlineTitle.trim(), date: deadlineDate, type: deadlineType }]); setDeadlineTitle(''); setDeadlineDate(''); };
   return (
     <>
       <Text style={styles.stepHeading}>Purchase details</Text>
@@ -194,6 +209,15 @@ function FormStep({ form, errors, documents, upload, pendingKind, update, onPick
       <View style={{ height: spacing.md }} />
       <Input label="WARRANTY PROVIDER" value={form.warrantyProvider} onChangeText={(value) => update('warrantyProvider', value)} placeholder="e.g. Samsung, AppleCare" autoCapitalize="words" />
 
+      <Text style={styles.stepHeading}>Other deadlines</Text>
+      <Text style={[type.bodySmall, styles.sectionHint]}>Track rebates, registrations, price-match windows, or any date that matters.</Text>
+      {customDeadlines.map((deadline) => <View key={deadline.id} style={styles.savedDeadline}><Badge label={deadline.type} tone="brand" /><Input accessibilityLabel={`Name for ${deadline.title}`} value={deadline.title} onChangeText={(title) => onCustomDeadlinesChange(customDeadlines.map((item) => item.id === deadline.id ? { ...item, title } : item))} containerStyle={{ flex: 1, minWidth: 150 }} /><Input accessibilityLabel={`Date for ${deadline.title}`} value={deadline.date} onChangeText={(date) => onCustomDeadlinesChange(customDeadlines.map((item) => item.id === deadline.id ? { ...item, date } : item))} keyboardType="numbers-and-punctuation" error={!isValidIsoDate(deadline.date) ? 'Use YYYY-MM-DD.' : undefined} containerStyle={{ width: 150 }} /><IconButton icon="trash-2" label={`Remove ${deadline.title}`} size={38} onPress={() => onCustomDeadlinesChange(customDeadlines.filter((item) => item.id !== deadline.id))} /></View>)}
+      <View style={styles.deadlineEditor}>
+        <View style={styles.suggestionRow}><Chip label="Custom" selected={deadlineType === 'custom'} onPress={() => setDeadlineType('custom')} /><Chip label="Rebate" selected={deadlineType === 'rebate'} onPress={() => setDeadlineType('rebate')} /></View>
+        <View style={styles.row}><Input label="DEADLINE NAME" value={deadlineTitle} onChangeText={setDeadlineTitle} placeholder="e.g. Submit rebate" containerStyle={{ flex: 1 }} /><Input label="DATE" value={deadlineDate} onChangeText={setDeadlineDate} placeholder="YYYY-MM-DD" keyboardType="numbers-and-punctuation" error={deadlineDate && !isValidIsoDate(deadlineDate) ? 'Enter a real date in YYYY-MM-DD format.' : undefined} containerStyle={{ flex: 1 }} /></View>
+        <Button size="sm" variant="secondary" icon="plus" label="Add deadline" disabled={!deadlineValid} onPress={addDeadline} />
+      </View>
+
       <Text style={styles.stepHeading}>Product & documents</Text>
       <View style={styles.row}>
         <Input label="SERIAL NUMBER" value={form.serial} onChangeText={(value) => update('serial', value)} placeholder="Optional" autoCapitalize="characters" />
@@ -230,13 +254,13 @@ function FormStep({ form, errors, documents, upload, pendingKind, update, onPick
       </View>
 
       <View style={styles.footerActions}>
-        <Button label="Review purchase" icon="arrow-right" onPress={onNext} fullWidth />
+        <Button label="Review purchase" icon="arrow-right" onPress={onNext} disabled={!savedDeadlinesValid} fullWidth />
       </View>
     </>
   );
 }
 
-function ReviewStep({ purchase, onEdit, onSave }: { purchase: Purchase; onEdit: () => void; onSave: () => void }) {
+function ReviewStep({ purchase, onEdit, onSave, saveState }: { purchase: Purchase; onEdit: () => void; onSave: () => void; saveState: 'idle' | 'saving' | 'error' }) {
   const rows: Array<[string, string]> = [
     ['Product', purchase.name], ['Merchant', purchase.merchant], ['Price', formatMoney(purchase.price)], ['Purchase date', formatDate(purchase.purchaseDate)], ['Category', purchase.category],
     ['Return deadline', purchase.returnDeadline ? formatDate(purchase.returnDeadline) : 'Not added'], ['Warranty', purchase.warrantyEnd ? `${formatDate(purchase.warrantyEnd)}${purchase.warrantyProvider ? ` · ${purchase.warrantyProvider}` : ''}` : 'Not added'],
@@ -260,9 +284,10 @@ function ReviewStep({ purchase, onEdit, onSave }: { purchase: Purchase; onEdit: 
           </View>
         ))}
       </View>
-      <View style={styles.row}>
+      {saveState === 'error' ? <Banner tone="danger" icon="alert-circle" title="Purchase not saved" message="ProofPilot could not write this record to device storage. Your form is still here; free some storage and try again." /> : null}
+      <View style={[styles.row, { marginTop: saveState === 'error' ? spacing.md : 0 }]}>
         <Button label="Back to edit" icon="edit-2" variant="secondary" onPress={onEdit} style={{ flex: 1 }} />
-        <Button label="Save purchase" icon="shield" onPress={onSave} style={{ flex: 1 }} />
+        <Button label="Save purchase" icon="shield" onPress={onSave} loading={saveState === 'saving'} style={{ flex: 1 }} />
       </View>
     </>
   );
@@ -291,9 +316,11 @@ const styles = StyleSheet.create({
   methodIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center' },
   stepHeading: { ...type.heading, marginTop: spacing.lg, marginBottom: spacing.md },
   sectionHint: { marginBottom: spacing.md, marginTop: -spacing.sm },
-  row: { flexDirection: 'row', gap: spacing.md },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   suggestionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
   dateChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  savedDeadline: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm },
+  deadlineEditor: { gap: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, marginTop: spacing.sm },
   documentCard: { padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginTop: spacing.md },
   documentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   kindPicker: { flexDirection: 'row', gap: spacing.sm },

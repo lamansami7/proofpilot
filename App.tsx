@@ -17,7 +17,7 @@ import { useAppSettings } from './src/hooks/useAppSettings';
 import { useBreakpoint } from './src/hooks/useBreakpoint';
 import { usePurchaseStore } from './src/hooks/usePurchaseStore';
 import { useSession } from './src/hooks/useSession';
-import { documentInventory, initialsFor, normalizedDeadlines, urgentDeadlines } from './src/lib/purchaseSelectors';
+import { documentInventory, initialsFor, matchesPurchaseSearch, normalizedDeadlines, urgentDeadlines } from './src/lib/purchaseSelectors';
 import { createAIService } from './src/services/ai/AIService';
 import type { FeatherIconName, Purchase } from './src/types/purchase';
 
@@ -28,7 +28,7 @@ type Toast = { message: string; tone: 'success' | 'danger' | 'info' };
 export default function App() {
   const viewport = useBreakpoint();
   const session = useSession();
-  const store = usePurchaseStore();
+  const store = usePurchaseStore(session.user?.id);
   const { settings, update: updateSettings } = useAppSettings();
   const [tab, setTab] = useState<Tab>('Home');
   const [selectedId, setSelectedId] = useState<Purchase['id'] | null>(null);
@@ -60,14 +60,14 @@ export default function App() {
     return items.every((item) => demoPurchases.some((demo) => demo.id === item.id));
   }, [items, settings.sampleBannerDismissed]);
 
-  const filtered = useMemo(() => items.filter((item) => [item.name, item.merchant, item.category, item.serial, item.model, item.notes].filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())), [items, query]);
+  const filtered = useMemo(() => items.filter((item) => matchesPurchaseSearch(item, query)), [items, query]);
 
   const openPurchase = (purchase: Purchase) => setSelectedId(purchase.id);
   const openAddFlow = () => { setEditing(null); setFlowOpen(true); };
   const openEditFlow = (purchase: Purchase) => { setSelectedId(null); setEditing(purchase); setFlowOpen(true); };
-  const savePurchase = (purchase: Purchase) => { store.upsert(purchase); notify(editing ? 'Purchase record updated.' : `${purchase.name} is now protected.`); };
-  const updatePurchase = (purchase: Purchase) => store.upsert(purchase);
-  const deletePurchase = (purchase: Purchase) => { store.remove(purchase.id); setSelectedId(null); notify(`${purchase.name} was deleted.`, 'info'); };
+  const savePurchase = async (purchase: Purchase) => { await store.upsert(purchase); notify(editing ? 'Purchase record updated.' : `${purchase.name} was saved.`); };
+  const updatePurchase = (purchase: Purchase) => { store.upsert(purchase).catch(() => notify('That change could not be saved.', 'danger')); };
+  const deletePurchase = async (purchase: Purchase) => { try { await store.remove(purchase.id); setSelectedId(null); notify(`${purchase.name} was deleted.`, 'info'); } catch { notify('The purchase could not be deleted.', 'danger'); } };
 
   const onSearch = (value: string) => { setQuery(value); if (value && tab !== 'Purchases') setTab('Purchases'); };
   const restoreSamples = () => { store.restoreSamples(); updateSettings({ sampleBannerDismissed: false }); };
@@ -122,8 +122,8 @@ export default function App() {
                 {tab === 'Home' ? <Dashboard items={items} isPhone={viewport.isPhone} userEmail={userEmail} sampleVisible={sampleVisible} aiConfigured={aiConfigured} onAdd={openAddFlow} onOpen={openPurchase} onPurchases={() => setTab('Purchases')} onDeadlines={() => setTab('Deadlines')} onVault={() => setTab('Vault')} onDismissSample={() => updateSettings({ sampleBannerDismissed: true })} onClearSamples={() => { store.replaceAll([]); updateSettings({ sampleBannerDismissed: true }); notify('Sample data cleared.', 'info'); }} onRestoreSamples={() => { restoreSamples(); notify('Sample data loaded.'); }} /> : null}
                 {tab === 'Purchases' ? <PurchasesScreen items={filtered} total={items.length} query={query} onAdd={openAddFlow} onOpen={openPurchase} /> : null}
                 {tab === 'Deadlines' ? <DeadlineRadar deadlines={deadlines} onOpenPurchase={openPurchase} onAdd={openAddFlow} /> : null}
-                {tab === 'Vault' ? <VaultScreen items={items} onAdd={openAddFlow} onOpenPurchase={openPurchase} /> : null}
-                {tab === 'Settings' ? <SettingsScreen items={items} settings={settings} updateSettings={updateSettings} userEmail={userEmail} configured={session.configured} onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))} onRestoreSamples={() => { restoreSamples(); notify('Sample data restored.'); }} onDeleteAll={() => { store.replaceAll([]); notify('All purchases deleted from this device.', 'info'); }} onNotify={notify} /> : null}
+                {tab === 'Vault' ? <VaultScreen items={items} onAdd={openAddFlow} onOpenPurchase={openPurchase} onUpdatePurchase={updatePurchase} /> : null}
+                {tab === 'Settings' ? <SettingsScreen items={items} settings={settings} updateSettings={updateSettings} userEmail={userEmail} configured={session.configured} syncStatus={store.syncStatus} syncError={store.syncError} onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))} onRestoreSamples={() => { restoreSamples(); notify('Sample data restored.'); }} onDeleteAll={() => { store.replaceAll([]); notify('All purchases deleted from this device.', 'info'); }} onNotify={notify} /> : null}
               </>
             )}
           </ScrollView>

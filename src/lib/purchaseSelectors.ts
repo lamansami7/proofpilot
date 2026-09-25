@@ -1,4 +1,5 @@
 import { daysUntil } from './deadlines';
+import { addCalendarDays, isValidIsoDate, isoDate } from './date';
 import type { ActionNeeded, DeadlineStatus, DeadlineType, DocumentKind, Purchase, PurchaseDeadline, ProtectionStatus } from '../types/purchase';
 
 export type NormalizedDeadline = PurchaseDeadline & { purchase: Purchase; days: number; status: DeadlineStatus };
@@ -11,10 +12,19 @@ export const protectionLabel = (status: ProtectionStatus) => status === 'protect
 export const deadlineTypeLabel = (type: DeadlineType) => ({ return: 'Return deadline', warranty: 'Warranty expiration', rebate: 'Rebate deadline', custom: 'Custom deadline' })[type];
 export const documentKindLabel = (kind: DocumentKind) => ({ receipt: 'Receipt', warranty: 'Warranty document', manual: 'Product document', claim: 'Claim draft', other: 'Document' })[kind];
 
-/** Single source of truth for how protection status is derived. */
-export function deriveProtection(input: { returnDeadline: string | null; warrantyEnd: string | null; hasReceipt: boolean }): ProtectionStatus {
-  const hasCoverage = Boolean(input.returnDeadline || input.warrantyEnd);
-  if (!hasCoverage) return 'unprotected';
+export type CoverageState = 'unknown' | 'active' | 'expired';
+export type ProtectionDetails = { returnState: CoverageState; warrantyState: CoverageState; hasEvidence: boolean };
+
+export function protectionDetails(input: { returnDeadline: string | null; warrantyEnd: string | null; hasReceipt: boolean }, now = new Date()): ProtectionDetails {
+  const stateFor = (date: string | null): CoverageState => !date ? 'unknown' : daysUntil(date, now) < 0 ? 'expired' : 'active';
+  return { returnState: stateFor(input.returnDeadline), warrantyState: stateFor(input.warrantyEnd), hasEvidence: input.hasReceipt };
+}
+
+/** Protection means an active recorded window with proof of purchase. Expired/unknown coverage is not presented as active protection. */
+export function deriveProtection(input: { returnDeadline: string | null; warrantyEnd: string | null; hasReceipt: boolean }, now = new Date()): ProtectionStatus {
+  const details = protectionDetails(input, now);
+  const active = details.returnState === 'active' || details.warrantyState === 'active';
+  if (!active) return 'unprotected';
   return input.hasReceipt ? 'protected' : 'attention';
 }
 
@@ -64,7 +74,9 @@ export function actionNeeded(items: Purchase[], now = new Date()): ActionNeeded[
   const missing: ActionNeeded[] = [];
   items.forEach((purchase) => {
     if (!purchase.hasReceipt) missing.push({ id: `receipt-${purchase.id}`, kind: 'missing_receipt', purchase, title: 'Receipt missing', description: `${purchase.merchant} · Add proof of purchase`, actionLabel: 'Add receipt' });
-    if (!purchase.hasWarrantyInfo) missing.push({ id: `warranty-${purchase.id}`, kind: 'missing_warranty', purchase, title: 'Warranty information missing', description: `${purchase.merchant} · Add coverage details`, actionLabel: 'Add details' });
+    // An unknown warranty is not inherently a problem: many purchases have none.
+    // Only surface missing warranty detail when the record already indicates warranty coverage.
+    if (purchase.warrantyProvider && !purchase.warrantyEnd) missing.push({ id: `warranty-${purchase.id}`, kind: 'missing_warranty', purchase, title: 'Warranty expiration missing', description: `${purchase.merchant} · Add the coverage end date`, actionLabel: 'Add details' });
   });
   return [...deadlines, ...missing];
 }
@@ -78,10 +90,19 @@ export function initialsFor(email: string | null | undefined): string {
   const letters = parts.length >= 2 ? parts.slice(0, 2).map((part) => part[0]).join('') : local.slice(0, 2);
   return letters.toUpperCase() || 'PP';
 }
-export function isValidIsoDate(value: string): boolean { return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T12:00:00`).getTime()); }
-export function isoDate(date: Date): string { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
-export function isoDaysFrom(baseIso: string | null, daysToAdd: number, now = new Date()): string {
-  const base = baseIso && isValidIsoDate(baseIso) ? new Date(`${baseIso}T12:00:00`) : now;
-  base.setDate(base.getDate() + daysToAdd);
-  return isoDate(base);
+export { isValidIsoDate, isoDate };
+export function isoDaysFrom(baseIso: string | null, daysToAdd: number, now = new Date()): string { return addCalendarDays(baseIso, daysToAdd, now); }
+
+export function purchaseSearchText(item: Purchase): string {
+  return [item.name, item.merchant, item.category, item.notes, item.serial, item.model, item.warrantyProvider,
+    item.returnDeadline ? `return return deadline ${item.returnDeadline}` : null,
+    item.warrantyEnd ? `warranty warranty expiration ${item.warrantyEnd}` : null,
+    ...item.documents.flatMap((document) => [document.name, documentKindLabel(document.kind)]),
+    ...item.deadlines.flatMap((deadline) => [deadline.title, deadlineTypeLabel(deadline.type), deadline.date]),
+  ].filter(Boolean).join(' ').toLocaleLowerCase();
+}
+export function matchesPurchaseSearch(item: Purchase, query: string): boolean {
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = purchaseSearchText(item);
+  return terms.every((term) => haystack.includes(term));
 }
