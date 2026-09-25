@@ -2,14 +2,28 @@ import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, spacing, type } from '../design/tokens';
-import { documentInventory, formatDate, type IndexedDocument } from '../lib/purchaseSelectors';
+import { deriveProtection, documentInventory, formatDate, type IndexedDocument } from '../lib/purchaseSelectors';
 import type { FeatherIconName, Purchase } from '../types/purchase';
-import { Badge, Banner, Button, Card, EmptyState, IconButton } from './ui';
+import { deleteDocumentFile } from '../lib/documents';
+import { Badge, Banner, Button, Card, EmptyState, IconButton, Input } from './ui';
 import { DocumentViewer, type ViewableDocument } from './documentViewer';
 
-export function VaultScreen({ items, onAdd, onOpenPurchase }: { items: Purchase[]; onAdd: () => void; onOpenPurchase: (purchase: Purchase) => void }) {
+export function VaultScreen({ items, onAdd, onOpenPurchase, onUpdatePurchase }: { items: Purchase[]; onAdd: () => void; onOpenPurchase: (purchase: Purchase) => void; onUpdatePurchase: (purchase: Purchase) => void }) {
   const [viewing, setViewing] = useState<ViewableDocument | null>(null);
+  const [query, setQuery] = useState('');
   const inventory = useMemo(() => documentInventory(items), [items]);
+  const visible = useMemo(() => {
+    const term = query.trim().toLocaleLowerCase();
+    const keep = (document: IndexedDocument) => !term || `${document.name} ${document.purchase.name} ${document.purchase.merchant} ${document.kind}`.toLocaleLowerCase().includes(term);
+    return { receipts: inventory.receipts.filter(keep), warranty: inventory.warranty.filter(keep), product: inventory.product.filter(keep), claims: inventory.claims.filter(keep) };
+  }, [inventory, query]);
+  const removeDocument = async (document: IndexedDocument) => {
+    await deleteDocumentFile(document).catch(() => undefined);
+    const documents = document.purchase.documents.filter((item) => item.id !== document.id);
+    const hasReceipt = documents.some((item) => item.kind === 'receipt');
+    onUpdatePurchase({ ...document.purchase, documents, hasReceipt, protectionStatus: deriveProtection({ returnDeadline: document.purchase.returnDeadline, warrantyEnd: document.purchase.warrantyEnd, hasReceipt }) });
+    if (viewing?.id === document.id) setViewing(null);
+  };
 
   if (items.length === 0) {
     return (
@@ -24,6 +38,7 @@ export function VaultScreen({ items, onAdd, onOpenPurchase }: { items: Purchase[
     <>
       <VaultHeader />
       <Banner tone="info" icon="hard-drive" title="Documents are stored on this device" message="Files stay in this app and are not uploaded anywhere in this build. Cloud storage activates when Supabase sync is configured." />
+      <View style={styles.search}><Input accessibilityLabel="Search documents" value={query} onChangeText={setQuery} placeholder="Search documents, purchases, or merchants" /></View>
       <View style={styles.summary}>
         <VaultTile icon="credit-card" label="Receipts" value={inventory.receipts.length} />
         <VaultTile icon="shield" label="Warranty documents" value={inventory.warranty.length} />
@@ -31,10 +46,10 @@ export function VaultScreen({ items, onAdd, onOpenPurchase }: { items: Purchase[
         <VaultTile icon="file-text" label="Claim drafts" value={inventory.claims.length} />
       </View>
 
-      <DocumentSection title="Receipts" detail="Proof of purchase — the backbone of every return and claim" documents={inventory.receipts} empty="Attach a receipt from any purchase screen, or while adding a purchase." onView={setViewing} onOpenPurchase={onOpenPurchase} />
-      <DocumentSection title="Warranty documents" detail="Coverage terms and certificates" documents={inventory.warranty} empty="Add a warranty document from a purchase’s record to keep coverage terms in reach." onView={setViewing} onOpenPurchase={onOpenPurchase} />
-      <DocumentSection title="Product documents" detail="Manuals, order confirmations, and anything else" documents={inventory.product} empty="Product manuals and other files you attach will appear here." onView={setViewing} onOpenPurchase={onOpenPurchase} />
-      <DocumentSection title="Claim drafts" detail="Editable drafts created with the Claim generator" documents={inventory.claims} empty="Generate a return or warranty draft from any purchase — saved drafts land here." onView={setViewing} onOpenPurchase={onOpenPurchase} />
+      <DocumentSection title="Receipts" detail="Proof of purchase — the backbone of every return and claim" documents={visible.receipts} empty="Attach a receipt from any purchase screen, or while adding a purchase." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={removeDocument} />
+      <DocumentSection title="Warranty documents" detail="Coverage terms and certificates" documents={visible.warranty} empty="Add a warranty document from a purchase’s record to keep coverage terms in reach." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={removeDocument} />
+      <DocumentSection title="Product documents" detail="Manuals, order confirmations, and anything else" documents={visible.product} empty="Product manuals and other files you attach will appear here." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={removeDocument} />
+      <DocumentSection title="Claim drafts" detail="Editable drafts created with the Claim generator" documents={visible.claims} empty="Generate a return or warranty draft from any purchase — saved drafts land here." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={removeDocument} />
 
       <DocumentViewer document={viewing} onClose={() => setViewing(null)} />
     </>
@@ -61,7 +76,7 @@ function VaultTile({ icon, label, value }: { icon: FeatherIconName; label: strin
   );
 }
 
-function DocumentSection({ title, detail, documents, empty, onView, onOpenPurchase }: { title: string; detail: string; documents: IndexedDocument[]; empty: string; onView: (document: ViewableDocument) => void; onOpenPurchase: (purchase: Purchase) => void }) {
+function DocumentSection({ title, detail, documents, empty, onView, onOpenPurchase, onDelete }: { title: string; detail: string; documents: IndexedDocument[]; empty: string; onView: (document: ViewableDocument) => void; onOpenPurchase: (purchase: Purchase) => void; onDelete: (document: IndexedDocument) => void }) {
   return (
     <View style={styles.section}>
       <View style={styles.sectionHead}>
@@ -83,6 +98,7 @@ function DocumentSection({ title, detail, documents, empty, onView, onOpenPurcha
               {document.content ? <Badge label="viewable" tone="info" /> : null}
               <IconButton icon="external-link" label={`Open ${document.name}`} size={36} onPress={() => onView({ ...document, purchaseName: document.purchase.name })} />
               <Button size="sm" variant="ghost" label="Purchase" accessibilityLabel={`Open purchase ${document.purchase.name}`} onPress={() => onOpenPurchase(document.purchase)} />
+              <IconButton icon="trash-2" label={`Delete ${document.name}`} size={36} onPress={() => onDelete(document)} />
             </View>
           ))}
         </Card>
@@ -96,6 +112,7 @@ function DocumentSection({ title, detail, documents, empty, onView, onOpenPurcha
 const styles = StyleSheet.create({
   title: { marginBottom: spacing.lg },
   subtitle: { marginTop: spacing.sm, maxWidth: 620 },
+  search: { marginTop: spacing.lg, maxWidth: 560 },
   summary: { flexDirection: 'row', gap: spacing.md, marginVertical: spacing.lg, flexWrap: 'wrap' },
   tile: { flex: 1, minWidth: 140, padding: spacing.lg, gap: 3 },
   tileIcon: { width: 34, height: 34, borderRadius: 11, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },

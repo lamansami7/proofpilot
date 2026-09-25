@@ -3,6 +3,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, radius, spacing, type } from '../design/tokens';
+import { persistDocumentUri } from '../lib/documents';
 import { deadlineStatus, deriveProtection, documentKindLabel, formatDate, formatMoney, isoDate, protectionLabel } from '../lib/purchaseSelectors';
 import type { DocumentKind, FeatherIconName, Purchase, PurchaseDocument } from '../types/purchase';
 import { Badge, Button, Card, Chip, IconButton, Sheet, type BadgeTone } from './ui';
@@ -42,7 +43,8 @@ export function PurchaseDetails({ purchase, onClose, onEdit, onDelete, onUpdate,
       const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true, multiple: false });
       if (!result.canceled) {
         const asset = result.assets[0];
-        const document: PurchaseDocument = { id: `document-${Date.now()}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, uri: asset.uri ?? null, addedAt: isoDate(new Date()) };
+        const uri = asset.uri ? await persistDocumentUri(asset.uri, asset.name) : null;
+        const document: PurchaseDocument = { id: `document-${Date.now()}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, uri, addedAt: isoDate(new Date()) };
         const documents = [...purchase.documents, document];
         onUpdate({ ...purchase, documents, hasReceipt: purchase.hasReceipt || kind === 'receipt', hasWarrantyInfo: purchase.hasWarrantyInfo || kind === 'warranty', protectionStatus: deriveProtection({ returnDeadline: purchase.returnDeadline, warrantyEnd: purchase.warrantyEnd, hasReceipt: purchase.hasReceipt || kind === 'receipt' }) });
         onNotify(`${documentKindLabel(kind)} attached to ${purchase.name}.`);
@@ -201,11 +203,11 @@ function DocumentRow({ document, onOpen }: { document: PurchaseDocument; onOpen:
 }
 
 const styles = StyleSheet.create({
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
-  headerActions: { flexDirection: 'row', gap: spacing.sm },
+  headerRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
+  headerActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   kindPicker: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, marginBottom: spacing.md },
-  protectionGrid: { flexDirection: 'row', gap: spacing.md },
-  protectionCard: { flex: 1, padding: spacing.lg, minWidth: 0 },
+  protectionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  protectionCard: { flex: 1, flexBasis: 260, padding: spacing.lg, minWidth: 0 },
   protectionHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   protectionIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center' },
   section: { padding: spacing.lg, marginTop: spacing.md },

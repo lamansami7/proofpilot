@@ -6,6 +6,7 @@ import { cloudAvailable } from '../lib/purchaseRepository';
 import { protectionSummary } from '../lib/purchaseSelectors';
 import { createAIService } from '../services/ai/AIService';
 import type { AppSettings } from '../hooks/useAppSettings';
+import type { SyncStatus } from '../hooks/usePurchaseStore';
 import type { FeatherIconName, Purchase } from '../types/purchase';
 import { Badge, Banner, Button, Card, Input } from './ui';
 
@@ -15,13 +16,15 @@ type SettingsProps = {
   updateSettings: (patch: Partial<AppSettings>) => void;
   userEmail: string | null;
   configured: boolean;
+  syncStatus: SyncStatus;
+  syncError: string | null;
   onSignOut: () => void;
   onRestoreSamples: () => void;
   onDeleteAll: () => void;
   onNotify: (message: string) => void;
 };
 
-export function SettingsScreen({ items, settings, updateSettings, userEmail, configured, onSignOut, onRestoreSamples, onDeleteAll, onNotify }: SettingsProps) {
+export function SettingsScreen({ items, settings, updateSettings, userEmail, configured, syncStatus, syncError, onSignOut, onRestoreSamples, onDeleteAll, onNotify }: SettingsProps) {
   const [returnDays, setReturnDays] = useState(String(settings.defaultReturnWindowDays));
   const [confirmWipe, setConfirmWipe] = useState(false);
   const summary = protectionSummary(items);
@@ -91,7 +94,7 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
 
       <Section icon="cloud" title="Cloud sync" detail={cloudAvailable() ? 'Supabase connection detected' : 'Not configured'}>
         {cloudAvailable() ? (
-          <Banner tone="success" icon="check-circle" title="Supabase is configured" message="Sign-in is enabled and your schema is ready. Purchases you save in this build remain local-first until repository sync is switched on." />
+          <Banner tone={syncStatus === 'error' ? 'warning' : syncStatus === 'synced' ? 'success' : 'info'} icon={syncStatus === 'error' ? 'alert-circle' : syncStatus === 'synced' ? 'check-circle' : 'refresh-cw'} title={syncStatus === 'error' ? 'Cloud sync needs attention' : syncStatus === 'synced' ? 'Local and cloud records are synced' : 'Cloud sync is connecting'} message={syncError ?? 'Purchases are saved locally first, then synchronized to your private Supabase account.'} />
         ) : (
           <Banner tone="info" icon="cloud-off" title="Cloud sync is off" message="Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then run the migration in /supabase. Until then, everything you add is saved on this device only." />
         )}
