@@ -73,7 +73,7 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
     if (!onSaveDraft) return;
     setVaultState('saving');
     try { await onSaveDraft({
-      id: `claim-${Date.now()}`,
+      id: `claim-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name: `${claimType === 'return' ? 'Return' : 'Warranty'} claim draft — ${purchase.name} (${isoDate(new Date())})`,
       kind: 'claim',
       mimeType: 'text/plain',
@@ -96,7 +96,7 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
 
       <View style={styles.tabs}>
         {(['return', 'warranty'] as ClaimType[]).map((item) => (
-          <Pressable key={item} accessibilityRole="tab" accessibilityState={{ selected: item === claimType }} onPress={() => select(item)} style={[styles.tab, item === claimType ? styles.tabActive : null]}>
+          <Pressable key={item} accessibilityRole="tab" accessibilityState={{ selected: item === claimType }} accessibilityHint={item === claimType ? 'Selected' : `Switch to ${item} claim`} onPress={() => select(item)} style={[styles.tab, item === claimType ? styles.tabActive : null]}>
             <Text style={item === claimType ? styles.tabActiveText : type.label}>{item === 'return' ? 'Return claim' : 'Warranty claim'}</Text>
           </Pressable>
         ))}

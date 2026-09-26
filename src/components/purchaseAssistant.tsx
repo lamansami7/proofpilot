@@ -97,7 +97,7 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
             <View style={styles.suggestions}>
               <Text style={styles.eyebrow}>SUGGESTED QUESTIONS</Text>
               {questions.map((item) => (
-                <Pressable key={item} accessibilityRole="button" accessibilityLabel={`Ask: ${item}`} onPress={() => ask(item)} style={interactive(styles.question, { hover: { backgroundColor: colors.surfaceMuted } })}>
+                <Pressable key={item} accessibilityRole="button" accessibilityLabel={`Ask: ${item}`} accessibilityHint="Sends this suggested question for this purchase" onPress={() => ask(item)} style={interactive(styles.question, { hover: { backgroundColor: colors.surfaceMuted } })}>
                   <Text style={styles.questionText}>{item}</Text>
                   <Feather name="arrow-up-right" size={14} color={colors.brandDark} />
                 </Pressable>
@@ -164,12 +164,12 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
 }
 
 const styles = StyleSheet.create({
-  card: { padding: spacing.lg, marginTop: spacing.sm, backgroundColor: colors.brandMuted, borderColor: '#DCE9CA' },
+  card: { padding: spacing.lg, marginTop: spacing.sm, backgroundColor: colors.brandMuted, borderColor: colors.brandBorder },
   heading: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
   flex: { flex: 1 },
-  icon: { height: 38, width: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#DCEFC6' },
-  factsBlock: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
-  factsColumn: { flex: 1, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surface, minWidth: 0 },
+  icon: { height: 38, width: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brandTint },
+  factsBlock: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, flexWrap: 'wrap' },
+  factsColumn: { flex: 1, flexBasis: 220, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surface, minWidth: 160 },
   eyebrow: { ...type.eyebrow, marginBottom: 6 },
   fact: { ...type.bodySmall, marginTop: 3 },
   factName: { fontWeight: '800', color: colors.ink },
@@ -184,6 +184,6 @@ const styles = StyleSheet.create({
   userText: { ...type.body, color: colors.surface, fontWeight: '700' },
   generated: { ...type.eyebrow, fontSize: 9, marginBottom: 4 },
   status: { minHeight: 42, marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  composer: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, alignItems: 'center' },
+  composer: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, alignItems: 'center', flexWrap: 'wrap' },
   pressed: { opacity: 0.74 },
 });

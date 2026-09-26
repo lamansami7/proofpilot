@@ -10,6 +10,7 @@ import { PurchaseFlow } from './src/components/purchaseFlow';
 import { PurchasesScreen } from './src/components/purchasesScreen';
 import { SettingsScreen } from './src/components/settingsScreen';
 import { VaultScreen } from './src/components/vaultScreen';
+import { Onboarding } from './src/components/onboarding';
 import { Banner, Button, IconButton, Input, LoadingState, interactive } from './src/components/ui';
 import { demoPurchases } from './src/data/demoPurchases';
 import { colors, radius, shadows, sizing, spacing, type } from './src/design/tokens';
@@ -17,7 +18,14 @@ import { useAppSettings } from './src/hooks/useAppSettings';
 import { useBreakpoint } from './src/hooks/useBreakpoint';
 import { usePurchaseStore } from './src/hooks/usePurchaseStore';
 import { useSession } from './src/hooks/useSession';
-import { deriveProtection, documentInventory, initialsFor, matchesPurchaseSearch, normalizedDeadlines, urgentDeadlines } from './src/lib/purchaseSelectors';
+import {
+  deriveProtection,
+  documentInventory,
+  initialsFor,
+  matchesPurchaseSearch,
+  normalizedDeadlines,
+  urgentDeadlines,
+} from './src/lib/purchaseSelectors';
 import { createAIService } from './src/services/ai/AIService';
 import type { FeatherIconName, Purchase } from './src/types/purchase';
 
@@ -30,11 +38,21 @@ export default function App() {
   const session = useSession();
   const store = usePurchaseStore(session.user?.id);
   const { settings, update: persistSettings, hydrated: settingsReady, error: settingsError } = useAppSettings();
-  const updateSettings = async (patch: Parameters<typeof persistSettings>[0]) => { await persistSettings(patch); };
-  const dismissSample = () => { updateSettings({ sampleBannerDismissed: true }).catch(() => notify('Settings could not be saved.', 'danger')); };
-  // Re-derive date-sensitive state (protections, day counts) at least once a minute.
+  const updateSettings = async (patch: Parameters<typeof persistSettings>[0]) => {
+    await persistSettings(patch);
+  };
+  const dismissSample = () =>
+    updateSettings({ sampleBannerDismissed: true }).catch(() => notify('Settings could not be saved.', 'danger'));
+  const completeOnboarding = () =>
+    updateSettings({ onboardingCompleted: true }).catch(() => notify('Settings could not be saved.', 'danger'));
+
+  // Re-derive date-sensitive state at least once a minute.
   const [clockTick, setClockTick] = useState(0);
-  useEffect(() => { const timer = setInterval(() => setClockTick(value => value + 1), 60000); return () => clearInterval(timer); }, []);
+  useEffect(() => {
+    const timer = setInterval(() => setClockTick((v) => v + 1), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
   const [tab, setTab] = useState<Tab>('Home');
   const [selectedId, setSelectedId] = useState<Purchase['id'] | null>(null);
   const [flowOpen, setFlowOpen] = useState(false);
@@ -48,10 +66,20 @@ export default function App() {
     setToast({ message, tone });
     toastTimer.current = setTimeout(() => setToast(null), 3400);
   };
-  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
-  useEffect(() => { if (store.storageError) notify('Device storage is unavailable — changes may not persist between sessions.', 'danger'); }, [store.storageError]);
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    },
+    [],
+  );
+  useEffect(() => {
+    if (store.storageError) notify('Device storage is unavailable — changes may not persist between sessions.', 'danger');
+  }, [store.storageError]);
 
-  const items = useMemo(() => store.items.map(item => ({ ...item, protectionStatus: deriveProtection(item) })), [store.items, clockTick]);
+  const items = useMemo(
+    () => store.items.map((item) => ({ ...item, protectionStatus: deriveProtection(item) })),
+    [store.items, clockTick],
+  );
   const selected = useMemo(() => items.find((item) => item.id === selectedId) ?? null, [items, selectedId]);
   const deadlines = useMemo(() => normalizedDeadlines(items), [items]);
   const urgentCount = useMemo(() => urgentDeadlines(items).length, [items]);
@@ -60,27 +88,74 @@ export default function App() {
   const aiConfigured = useMemo(() => createAIService().isConfigured, []);
   const userEmail = session.user?.email ?? null;
 
-  const sampleVisible = items.some(item => demoPurchases.some(demo => demo.id === item.id)) && !settings.sampleBannerDismissed;
+  const sampleVisible =
+    items.some((item) => demoPurchases.some((demo) => demo.id === item.id)) && !settings.sampleBannerDismissed;
 
   const filtered = useMemo(() => items.filter((item) => matchesPurchaseSearch(item, query)), [items, query]);
 
   const openPurchase = (purchase: Purchase) => setSelectedId(purchase.id);
-  const openAddFlow = () => { setEditing(null); setFlowOpen(true); };
-  const openEditFlow = (purchase: Purchase) => { setSelectedId(null); setEditing(purchase); setFlowOpen(true); };
-  const savePurchase = async (purchase: Purchase) => { await store.upsert(purchase); notify(editing ? 'Purchase record updated.' : `${purchase.name} was saved.`); };
+  const openAddFlow = () => {
+    setEditing(null);
+    setFlowOpen(true);
+  };
+  const openEditFlow = (purchase: Purchase) => {
+    setSelectedId(null);
+    setEditing(purchase);
+    setFlowOpen(true);
+  };
+  const savePurchase = async (purchase: Purchase) => {
+    await store.upsert(purchase);
+    notify(editing ? 'Purchase record updated.' : `${purchase.name} was saved.`);
+  };
   const updatePurchase = (purchase: Purchase) => store.upsert(purchase);
-  const deletePurchase = async (purchase: Purchase) => { try { await store.remove(purchase.id); setSelectedId(null); notify(`${purchase.name} was deleted.`, 'info'); } catch { notify('The purchase could not be deleted.', 'danger'); } };
+  const deletePurchase = async (purchase: Purchase) => {
+    try {
+      await store.remove(purchase.id);
+      setSelectedId(null);
+      notify(`${purchase.name} was deleted.`, 'info');
+    } catch {
+      notify('The purchase could not be deleted.', 'danger');
+    }
+  };
 
-  const onSearch = (value: string) => { setQuery(value); if (value && tab !== 'Purchases') setTab('Purchases'); };
-  const restoreSamples = async () => { try { await store.restoreSamples(); await updateSettings({ sampleBannerDismissed: false }); notify('Sample records added. Existing purchases were kept.'); } catch { notify('Samples could not be saved.', 'danger'); } };
-  const clearRecords = async (samplesOnly = false) => { try { await store.replaceAll(samplesOnly ? items.filter(item => !demoPurchases.some(d => d.id === item.id)) : []); notify(samplesOnly ? 'Sample records cleared.' : 'Records deleted on this device. Cloud changes are queued when signed in.', 'info'); } catch { notify('Could not delete records. Your saved data is unchanged.', 'danger'); } };
+  const onSearch = (value: string) => {
+    setQuery(value);
+    if (value && tab !== 'Purchases') setTab('Purchases');
+  };
+  const restoreSamples = async () => {
+    try {
+      await store.restoreSamples();
+      await updateSettings({ sampleBannerDismissed: false, onboardingCompleted: true });
+      notify('Sample records added. Existing purchases were kept.');
+    } catch {
+      notify('Samples could not be saved.', 'danger');
+    }
+  };
+  const clearRecords = async (samplesOnly = false) => {
+    try {
+      await store.replaceAll(samplesOnly ? items.filter((item) => !demoPurchases.some((d) => d.id === item.id)) : []);
+      notify(
+        samplesOnly ? 'Sample records cleared.' : 'Records deleted on this device. Cloud changes are queued when signed in.',
+        'info',
+      );
+    } catch {
+      notify('Could not delete records. Your saved data is unchanged.', 'danger');
+    }
+  };
+
+  const showOnboarding = store.hydrated && settingsReady && items.length === 0 && !settings.onboardingCompleted;
 
   if (session.configured && session.loading) {
     return (
       <SafeAreaView style={styles.app}>
         <StatusBar style="dark" />
         <View style={styles.boot}>
-          <View style={styles.brand}><View style={styles.logo}><Feather name="shield" size={20} color={colors.ink} /></View><Text style={styles.brandName}>ProofPilot</Text></View>
+          <View style={styles.brand}>
+            <View style={styles.logo}>
+              <Feather name="shield" size={20} color={colors.ink} />
+            </View>
+            <Text style={styles.brandName}>ProofPilot</Text>
+          </View>
           <LoadingState label="Checking your session…" />
         </View>
       </SafeAreaView>
@@ -91,47 +166,189 @@ export default function App() {
     return (
       <SafeAreaView style={styles.app}>
         <StatusBar style="dark" />
-        <AuthScreen onSubmit={async (email, password, signUp) => {
-          const { data, error } = signUp ? await session.signUp(email, password) : await session.signIn(email, password);
-          if (error) throw error;
-          if (signUp && !data.session) return { info: 'We sent a confirmation link to your email. Confirm it, then sign in here.' };
-        }} />
+        <AuthScreen
+          onSubmit={async (email, password, signUp) => {
+            const { data, error } = signUp
+              ? await session.signUp(email, password)
+              : await session.signIn(email, password);
+            if (error) throw error;
+            if (signUp && !data.session)
+              return { info: 'We sent a confirmation link to your email. Confirm it, then sign in here.' };
+          }}
+        />
       </SafeAreaView>
     );
   }
 
   const navGroups: Array<{ label: string; items: NavItem[] }> = [
     { label: 'OVERVIEW', items: [{ label: 'Home', icon: 'home' }] },
-    { label: 'PROTECTION', items: [
-      { label: 'Purchases', icon: 'shopping-bag', badge: items.length },
-      { label: 'Deadlines', icon: 'calendar', badge: urgentCount, muted: urgentCount === 0 },
-      { label: 'Vault', icon: 'archive', badge: documentCount, muted: documentCount === 0 },
-    ] },
+    {
+      label: 'PROTECTION',
+      items: [
+        { label: 'Purchases', icon: 'shopping-bag', badge: items.length },
+        { label: 'Deadlines', icon: 'calendar', badge: urgentCount, muted: urgentCount === 0 },
+        { label: 'Vault', icon: 'archive', badge: documentCount, muted: documentCount === 0 },
+      ],
+    },
     { label: 'ACCOUNT', items: [{ label: 'Settings', icon: 'settings' }] },
   ];
+
+  const breadcrumb = `Home › ${tab}${selected ? ` › ${selected.name}` : ''}${query ? ` · “${query}”` : ''}`;
 
   return (
     <SafeAreaView style={styles.app}>
       <StatusBar style="dark" />
       <View style={styles.frame}>
         {!viewport.isPhone ? (
-          <Sidebar groups={navGroups} active={tab} onSelect={setTab} userEmail={userEmail} configured={session.configured} onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))} itemCount={items.length} />
+          <Sidebar
+            groups={navGroups}
+            active={tab}
+            onSelect={setTab}
+            userEmail={userEmail}
+            configured={session.configured}
+            onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))}
+            itemCount={items.length}
+          />
         ) : null}
         <View style={styles.main}>
-          <Topbar query={query} onSearch={onSearch} urgentCount={urgentCount} userEmail={userEmail} compact={viewport.isPhone} onDeadlines={() => setTab('Deadlines')} onAccount={() => setTab('Settings')} />
-          <ScrollView contentContainerStyle={[styles.content, viewport.isPhone && styles.contentPhone]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            {!store.hydrated || !settingsReady ? <LoadingState label="Loading your protection record…" /> : (
-              <>
-                {store.storageError || settingsError ? <View style={{ marginBottom: spacing.lg }}><Banner tone="danger" icon="alert-circle" title="Device storage needs attention" message={store.storageError ?? settingsError!} /></View> : null}
-                <View style={styles.statusStrip}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 }}><Feather name={store.syncStatus === 'error' || (session.user && !store.online) ? 'cloud-off' : session.user ? 'cloud' : 'hard-drive'} size={14} color={colors.muted} /><Text style={type.caption}>{store.saving ? 'Saving to device…' : session.user && !store.online ? 'Offline · saved on this device · sync resumes when you reconnect' : !session.user ? (store.syncStatus === 'syncing' ? 'Synchronizing purchase records…' : 'Device storage · cloud sync is not connected') : store.syncStatus === 'syncing' ? 'Synchronizing purchase records…' : store.syncStatus === 'error' ? 'Saved on device · cloud sync needs attention' : store.syncStatus === 'synced' ? 'Cloud checked · no pending uploads · files stay on device' : 'Device storage · cloud sync is not connected'}</Text></View>
-                  {store.syncStatus === 'error' && store.online ? <Button size="sm" variant="ghost" label="Retry sync" onPress={() => { void store.retrySync(); }} /> : null}
+          <Topbar
+            query={query}
+            onSearch={onSearch}
+            urgentCount={urgentCount}
+            userEmail={userEmail}
+            compact={viewport.isPhone}
+            onDeadlines={() => setTab('Deadlines')}
+            onAccount={() => setTab('Settings')}
+          />
+          <ScrollView
+            contentContainerStyle={[styles.content, viewport.isPhone && styles.contentPhone]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {!store.hydrated || !settingsReady ? (
+              <LoadingState label="Loading your protection record…" />
+            ) : showOnboarding ? (
+              <View style={{ paddingTop: spacing.xl }}>
+                <Text style={[type.eyebrow, { textAlign: 'center' }]}>WELCOME TO PROOFPILOT</Text>
+                <Text style={[type.display, { textAlign: 'center', marginTop: spacing.sm }]}>Let’s protect something you own.</Text>
+                <Text style={[type.body, { textAlign: 'center', maxWidth: 560, alignSelf: 'center', marginTop: spacing.sm }]}>
+                  A few quick steps — then your receipts, return windows, and warranties will live in one calm, searchable place.
+                </Text>
+                <View style={{ marginTop: spacing.xxl }}>
+                  <Onboarding
+                    onAddPurchase={() => {
+                      void completeOnboarding();
+                      openAddFlow();
+                    }}
+                    onLoadSamples={() => {
+                      void restoreSamples();
+                    }}
+                    onDismiss={() => {
+                      void completeOnboarding();
+                    }}
+                  />
                 </View>
-                {tab === 'Home' ? <Dashboard items={items} isPhone={viewport.isPhone} userEmail={userEmail} sampleVisible={sampleVisible} aiConfigured={aiConfigured} onAdd={openAddFlow} onOpen={openPurchase} onPurchases={() => setTab('Purchases')} onDeadlines={() => setTab('Deadlines')} onVault={() => setTab('Vault')} onDismissSample={dismissSample} onClearSamples={() => { void clearRecords(true); }} onRestoreSamples={restoreSamples} /> : null}
-                {tab === 'Purchases' ? <PurchasesScreen items={filtered} total={items.length} query={query} onAdd={openAddFlow} onOpen={openPurchase} /> : null}
-                {tab === 'Deadlines' ? <DeadlineRadar onUpdate={updatePurchase} deadlines={deadlines} onOpenPurchase={openPurchase} onAdd={openAddFlow} /> : null}
-                {tab === 'Vault' ? <VaultScreen items={items} onAdd={openAddFlow} onOpenPurchase={openPurchase} onUpdatePurchase={updatePurchase} /> : null}
-                {tab === 'Settings' ? <SettingsScreen items={items} settings={settings} updateSettings={updateSettings} userEmail={userEmail} configured={session.configured} syncStatus={store.syncStatus} syncError={store.syncError} online={store.online} onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))} onRestoreSamples={restoreSamples} onDeleteAll={() => { void clearRecords(); }} onNotify={notify} /> : null}
+              </View>
+            ) : (
+              <>
+                {store.storageError || settingsError ? (
+                  <View style={{ marginBottom: spacing.lg }}>
+                    <Banner
+                      tone="danger"
+                      icon="alert-circle"
+                      title="Device storage needs attention"
+                      message={store.storageError ?? settingsError!}
+                    />
+                  </View>
+                ) : null}
+
+                {/* Breadcrumb & sync status */}
+                <View style={styles.statusStrip}>
+                  <Text accessibilityLabel={`Location: ${breadcrumb}`} numberOfLines={1} ellipsizeMode="tail" style={[type.caption, { flex: 1 }]}>
+                    {breadcrumb}
+                  </Text>
+                  <View style={styles.syncPill}>
+                    <Feather
+                      name={
+                        store.syncStatus === 'error' || (session.user && !store.online)
+                          ? 'cloud-off'
+                          : session.user
+                            ? 'cloud'
+                            : 'hard-drive'
+                      }
+                      size={13}
+                      color={store.syncStatus === 'error' ? colors.danger : colors.muted}
+                    />
+                    <Text style={[type.caption, store.syncStatus === 'error' && { color: colors.danger }]}>
+                      {store.saving
+                        ? 'Saving…'
+                        : session.user && !store.online
+                          ? 'Offline · saved locally'
+                          : !session.user
+                            ? store.syncStatus === 'syncing'
+                              ? 'Syncing…'
+                              : 'Local storage'
+                            : store.syncStatus === 'syncing'
+                              ? 'Syncing…'
+                              : store.syncStatus === 'error'
+                                ? 'Sync needs attention'
+                                : store.syncStatus === 'synced'
+                                  ? 'Synced'
+                                  : 'Local storage'}
+                    </Text>
+                    {store.syncStatus === 'error' && store.online ? (
+                      <Button size="sm" variant="danger" label="Retry" onPress={() => void store.retrySync()} />
+                    ) : null}
+                  </View>
+                </View>
+
+                {tab === 'Home' ? (
+                  <Dashboard
+                    items={items}
+                    isPhone={viewport.isPhone}
+                    userEmail={userEmail}
+                    sampleVisible={sampleVisible}
+                    aiConfigured={aiConfigured}
+                    onAdd={openAddFlow}
+                    onOpen={openPurchase}
+                    onPurchases={() => setTab('Purchases')}
+                    onDeadlines={() => setTab('Deadlines')}
+                    onVault={() => setTab('Vault')}
+                    onDismissSample={dismissSample}
+                    onClearSamples={() => void clearRecords(true)}
+                    onRestoreSamples={restoreSamples}
+                  />
+                ) : null}
+                {tab === 'Purchases' ? (
+                  <PurchasesScreen items={filtered} total={items.length} query={query} onAdd={openAddFlow} onOpen={openPurchase} />
+                ) : null}
+                {tab === 'Deadlines' ? (
+                  <DeadlineRadar onUpdate={updatePurchase} deadlines={deadlines} onOpenPurchase={openPurchase} onAdd={openAddFlow} />
+                ) : null}
+                {tab === 'Vault' ? (
+                  <VaultScreen
+                    items={items}
+                    onAdd={openAddFlow}
+                    onOpenPurchase={openPurchase}
+                    onUpdatePurchase={updatePurchase}
+                  />
+                ) : null}
+                {tab === 'Settings' ? (
+                  <SettingsScreen
+                    items={items}
+                    settings={settings}
+                    updateSettings={updateSettings}
+                    userEmail={userEmail}
+                    configured={session.configured}
+                    syncStatus={store.syncStatus}
+                    syncError={store.syncError}
+                    online={store.online}
+                    onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))}
+                    onRestoreSamples={restoreSamples}
+                    onDeleteAll={() => void clearRecords()}
+                    onNotify={notify}
+                  />
+                ) : null}
               </>
             )}
           </ScrollView>
@@ -139,18 +356,54 @@ export default function App() {
         </View>
       </View>
 
-      {viewport.isPhone ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Protect a purchase" onPress={openAddFlow} style={interactive(styles.fab, { hover: { backgroundColor: colors.brandStrong }, pressed: { opacity: 0.88 } })}>
-          <Feather name="plus" size={25} color={colors.ink} />
+      {viewport.isPhone && !showOnboarding ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Protect a purchase"
+          accessibilityHint="Opens the form to add a new purchase with receipts and deadlines"
+          onPress={openAddFlow}
+          style={interactive(styles.fab, {
+            hover: { backgroundColor: colors.brandStrong },
+            pressed: { opacity: 0.88 },
+          })}
+        >
+          <Feather name="plus" size={24} color={colors.ink} />
         </Pressable>
       ) : null}
 
-      <PurchaseFlow visible={flowOpen} initialPurchase={editing} merchants={merchants} defaultReturnDays={settings.defaultReturnWindowDays} onClose={() => { setFlowOpen(false); setEditing(null); }} onSave={savePurchase} onDone={(purchase) => { setFlowOpen(false); setEditing(null); setSelectedId(purchase.id); }} />
-      <PurchaseDetails key={selected?.id ?? "none"} purchase={selected} onClose={() => setSelectedId(null)} onEdit={openEditFlow} onDelete={deletePurchase} onUpdate={updatePurchase} onNotify={notify} />
+      <PurchaseFlow
+        visible={flowOpen}
+        initialPurchase={editing}
+        merchants={merchants}
+        defaultReturnDays={settings.defaultReturnWindowDays}
+        onClose={() => {
+          setFlowOpen(false);
+          setEditing(null);
+        }}
+        onSave={savePurchase}
+        onDone={(purchase) => {
+          setFlowOpen(false);
+          setEditing(null);
+          setSelectedId(purchase.id);
+        }}
+      />
+      <PurchaseDetails
+        key={selected?.id ?? 'none'}
+        purchase={selected}
+        onClose={() => setSelectedId(null)}
+        onEdit={openEditFlow}
+        onDelete={deletePurchase}
+        onUpdate={updatePurchase}
+        onNotify={notify}
+      />
 
       {toast ? (
         <View accessibilityLiveRegion="polite" style={[styles.toast, viewport.isPhone && styles.toastPhone]}>
-          <Feather name={toast.tone === 'danger' ? 'alert-circle' : toast.tone === 'info' ? 'info' : 'check-circle'} color={toast.tone === 'danger' ? '#F2B8BD' : toast.tone === 'info' ? '#B9CFEA' : colors.brand} size={17} />
+          <Feather
+            name={toast.tone === 'danger' ? 'alert-circle' : toast.tone === 'info' ? 'info' : 'check-circle'}
+            color={toast.tone === 'danger' ? '#F2B8BD' : toast.tone === 'info' ? '#B9CFEA' : colors.brand}
+            size={17}
+          />
           <Text style={styles.toastText}>{toast.message}</Text>
         </View>
       ) : null}
@@ -158,11 +411,29 @@ export default function App() {
   );
 }
 
-function Sidebar({ groups, active, onSelect, userEmail, configured, onSignOut, itemCount }: { groups: Array<{ label: string; items: NavItem[] }>; active: Tab; onSelect: (tab: Tab) => void; userEmail: string | null; configured: boolean; onSignOut: () => void; itemCount: number }) {
+function Sidebar({
+  groups,
+  active,
+  onSelect,
+  userEmail,
+  configured,
+  onSignOut,
+  itemCount,
+}: {
+  groups: Array<{ label: string; items: NavItem[] }>;
+  active: Tab;
+  onSelect: (tab: Tab) => void;
+  userEmail: string | null;
+  configured: boolean;
+  onSignOut: () => void;
+  itemCount: number;
+}) {
   return (
     <View style={styles.sidebar}>
       <View style={styles.brand}>
-        <View style={styles.logo}><Feather name="shield" size={20} color={colors.ink} /></View>
+        <View style={styles.logo}>
+          <Feather name="shield" size={20} color={colors.ink} />
+        </View>
         <View>
           <Text style={styles.brandName}>ProofPilot</Text>
           <Text style={styles.brandTag}>PURCHASE PROTECTION</Text>
@@ -175,13 +446,30 @@ function Sidebar({ groups, active, onSelect, userEmail, configured, onSignOut, i
             {group.items.map((item) => {
               const selectedTab = active === item.label;
               return (
-                <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{ selected: selectedTab }} onPress={() => onSelect(item.label)} style={interactive([styles.navItem, selectedTab ? styles.navActive : null], { hover: { backgroundColor: selectedTab ? colors.brandMuted : 'rgba(21,34,54,0.045)' } })}>
+                <Pressable
+                  key={item.label}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: selectedTab }}
+                  onPress={() => onSelect(item.label)}
+                  style={interactive([styles.navItem, selectedTab ? styles.navActive : null], {
+                    hover: { backgroundColor: selectedTab ? colors.brandMuted : 'rgba(21,34,54,0.045)' },
+                  })}
+                >
                   {selectedTab ? <View style={styles.navIndicator} /> : null}
                   <Feather name={item.icon} size={18} color={selectedTab ? colors.brandDark : colors.muted} />
                   <Text style={[styles.navText, selectedTab && styles.navTextActive]}>{item.label}</Text>
                   {item.badge !== undefined && item.badge > 0 ? (
-                    <View style={[styles.navBadge, item.label === 'Deadlines' ? { backgroundColor: colors.warningSurface } : null]}>
-                      <Text style={[styles.navBadgeText, item.label === 'Deadlines' ? { color: colors.warning } : null]}>{item.badge}</Text>
+                    <View
+                      style={[
+                        styles.navBadge,
+                        item.label === 'Deadlines' ? { backgroundColor: colors.warningSurface, borderColor: colors.warningBorder } : null,
+                      ]}
+                    >
+                      <Text
+                        style={[styles.navBadgeText, item.label === 'Deadlines' ? { color: colors.warning } : null]}
+                      >
+                        {item.badge}
+                      </Text>
                     </View>
                   ) : null}
                 </Pressable>
@@ -192,16 +480,26 @@ function Sidebar({ groups, active, onSelect, userEmail, configured, onSignOut, i
       </View>
       <View style={styles.sidebarBottom}>
         <View style={styles.syncCard}>
-          <Feather name={configured ? 'cloud' : 'hard-drive'} size={16} color={colors.brandDark} />
+          <View style={styles.syncIcon}>
+            <Feather name={configured ? 'cloud' : 'hard-drive'} size={16} color={colors.brandDark} />
+          </View>
           <View style={{ flex: 1 }}>
             <Text style={type.label}>{configured ? 'Account connected' : 'Local mode'}</Text>
-            <Text style={type.caption}>{configured ? 'See sync status above your records' : `${itemCount} purchase${itemCount === 1 ? '' : 's'} stored on this device`}</Text>
+            <Text style={type.caption}>
+              {configured
+                ? 'Your records sync securely'
+                : `${itemCount} purchase${itemCount === 1 ? '' : 's'} stored locally`}
+            </Text>
           </View>
         </View>
         <View style={styles.profile}>
-          <View style={styles.avatar}><Feather name={userEmail ? 'user' : 'smartphone'} size={15} color={colors.ink} /></View>
+          <View style={styles.avatar}>
+            <Feather name={userEmail ? 'user' : 'smartphone'} size={15} color={colors.ink} />
+          </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={type.label}>{userEmail ?? 'This device'}</Text>
+            <Text numberOfLines={1} style={type.label}>
+              {userEmail ?? 'This device'}
+            </Text>
             <Text style={type.caption}>{userEmail ? 'Signed in' : 'No cloud account'}</Text>
           </View>
           {userEmail ? <IconButton icon="log-out" label="Sign out" size={34} tone="ghost" onPress={onSignOut} /> : null}
@@ -211,25 +509,65 @@ function Sidebar({ groups, active, onSelect, userEmail, configured, onSignOut, i
   );
 }
 
-function Topbar({ query, onSearch, urgentCount, userEmail, compact, onDeadlines, onAccount }: { query: string; onSearch: (value: string) => void; urgentCount: number; userEmail: string | null; compact: boolean; onDeadlines: () => void; onAccount: () => void }) {
+function Topbar({
+  query,
+  onSearch,
+  urgentCount,
+  userEmail,
+  compact,
+  onDeadlines,
+  onAccount,
+}: {
+  query: string;
+  onSearch: (value: string) => void;
+  urgentCount: number;
+  userEmail: string | null;
+  compact: boolean;
+  onDeadlines: () => void;
+  onAccount: () => void;
+}) {
   return (
-    <View style={[styles.topbar, compact && { paddingHorizontal: spacing.lg, flexWrap: 'wrap', paddingVertical: spacing.md, gap: spacing.sm }]}>
+    <View style={[styles.topbar, compact && styles.topbarCompact]}>
       {compact ? (
         <View style={styles.mobileBrand}>
-          <View style={styles.logoSmall}><Feather name="shield" size={15} color={colors.ink} /></View>
+          <View style={styles.logoSmall}>
+            <Feather name="shield" size={15} color={colors.ink} />
+          </View>
           <Text style={styles.brandName}>ProofPilot</Text>
         </View>
       ) : null}
-      <View style={[styles.search, compact && { minWidth: 120 }]}>
+      <View style={[styles.search, compact && styles.searchCompact]}>
         <Feather name="search" size={17} color={colors.muted} />
-        <Input accessibilityLabel="Search your purchases" value={query} onChangeText={onSearch} placeholder={compact ? 'Search purchases' : 'Search purchases, merchants, serial numbers…'} containerStyle={{ flex: 1 }} style={styles.searchInput} />
+        <Input
+          accessibilityLabel="Search your purchases"
+          accessibilityHint="Filters the Purchases list as you type and switches to Purchases when needed"
+          returnKeyType="search"
+          value={query}
+          onChangeText={onSearch}
+          placeholder={compact ? 'Search purchases' : 'Search purchases, merchants, serial numbers…'}
+          containerStyle={{ flex: 1 }}
+          style={styles.searchInput}
+        />
         {query ? <IconButton icon="x" label="Clear search" size={30} tone="ghost" onPress={() => onSearch('')} /> : null}
       </View>
       <View>
-        <IconButton icon="bell" label={urgentCount ? `View deadlines: ${urgentCount} urgent` : 'View deadlines'} onPress={onDeadlines} />
-        {urgentCount > 0 ? <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>{urgentCount}</Text></View> : null}
+        <IconButton
+          icon="bell"
+          label={urgentCount ? `View deadlines: ${urgentCount} urgent` : 'View deadlines'}
+          onPress={onDeadlines}
+        />
+        {urgentCount > 0 ? (
+          <View accessibilityLabel={`${urgentCount} urgent deadlines`} style={styles.bellBadge}>
+            <Text style={styles.bellBadgeText}>{urgentCount > 99 ? '99+' : String(urgentCount)}</Text>
+          </View>
+        ) : null}
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel="Account and settings" onPress={onAccount} style={interactive(styles.topAvatar)}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Account and settings"
+        onPress={onAccount}
+        style={interactive(styles.topAvatar)}
+      >
         {userEmail ? <Text style={styles.avatarText}>{initialsFor(userEmail)}</Text> : <Feather name="smartphone" size={15} color={colors.ink} />}
       </Pressable>
     </View>
@@ -249,10 +587,20 @@ function BottomNav({ active, onSelect, urgentCount }: { active: Tab; onSelect: (
       {items.map((item) => {
         const selectedTab = active === item.label;
         return (
-          <Pressable key={item.label} accessibilityRole="tab" accessibilityState={{ selected: selectedTab }} onPress={() => onSelect(item.label)} style={interactive(styles.bottomItem, { hover: { backgroundColor: 'transparent' } })}>
+          <Pressable
+            key={item.label}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: selectedTab }}
+            onPress={() => onSelect(item.label)}
+            style={interactive(styles.bottomItem, { hover: { backgroundColor: 'transparent' } })}
+          >
             <View style={[styles.bottomIconWrap, selectedTab && styles.bottomIconWrapActive]}>
               <Feather name={item.icon} size={19} color={selectedTab ? colors.brandDark : colors.muted} />
-              {item.badge ? <View style={styles.bottomBadge}><Text style={styles.bottomBadgeText}>{item.badge}</Text></View> : null}
+              {item.badge ? (
+                <View accessibilityLabel={`${item.badge} urgent`} style={styles.bottomBadge}>
+                  <Text style={styles.bottomBadgeText}>{item.badge > 99 ? '99+' : String(item.badge)}</Text>
+                </View>
+              ) : null}
             </View>
             <Text style={[styles.bottomText, selectedTab && styles.bottomTextActive]}>{item.label}</Text>
           </Pressable>
@@ -263,51 +611,245 @@ function BottomNav({ active, onSelect, urgentCount }: { active: Tab; onSelect: (
 }
 
 const styles = StyleSheet.create({
-  statusStrip: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center', marginBottom: spacing.lg, minHeight: 24 },
+  statusStrip: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+    minHeight: 24,
+    flexWrap: 'wrap',
+  },
+  syncPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   app: { flex: 1, backgroundColor: colors.canvas },
   boot: { flex: 1, justifyContent: 'center', gap: spacing.xl, padding: spacing.xl },
   frame: { flex: 1, flexDirection: 'row', width: '100%', alignSelf: 'center' },
   main: { flex: 1, minWidth: 0 },
-  sidebar: { width: sizing.sidebar, paddingVertical: spacing.xl, paddingHorizontal: spacing.lg, backgroundColor: colors.surface, borderRightWidth: 1, borderRightColor: colors.border },
+  sidebar: {
+    width: sizing.sidebar,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+    ...shadows.card,
+  },
   brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm },
-  logo: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand },
-  logoSmall: { width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand },
+  logo: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.brand,
+  },
+  logoSmall: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.brand,
+  },
   brandName: { fontSize: 17, fontWeight: '800', letterSpacing: -0.6, color: colors.ink },
   brandTag: { fontSize: 8, fontWeight: '800', letterSpacing: 1.05, color: colors.subtle, marginTop: 2 },
   nav: { marginTop: spacing.xl, flex: 1 },
   navGroup: { marginBottom: spacing.lg },
   navGroupLabel: { ...type.eyebrow, fontSize: 9.5, paddingHorizontal: spacing.md, marginBottom: 6 },
-  navItem: { minHeight: 44, paddingHorizontal: spacing.md, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md, position: 'relative', marginBottom: 2 },
+  navItem: {
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    position: 'relative',
+    marginBottom: 2,
+  },
   navActive: { backgroundColor: colors.brandMuted },
-  navIndicator: { position: 'absolute', left: -spacing.lg, width: 3, height: 22, borderRadius: 2, backgroundColor: colors.brandDark },
-  navText: { ...type.body, flex: 1 },
+  navIndicator: {
+    position: 'absolute',
+    left: -spacing.lg,
+    width: 3,
+    height: 22,
+    borderRadius: 2,
+    backgroundColor: colors.brandDark,
+  },
+  navText: { ...type.body, flex: 1, color: colors.inkSecondary },
   navTextActive: { color: colors.ink, fontWeight: '800' },
-  navBadge: { minWidth: 22, height: 20, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  navBadge: {
+    minWidth: 22,
+    height: 20,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   navBadgeText: { fontSize: 10.5, fontWeight: '800', color: colors.inkSecondary },
   sidebarBottom: { gap: spacing.md },
-  syncCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
+  syncCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  syncIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: colors.brandMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   profile: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs },
-  avatar: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2E7DD' },
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F2E7DD',
+  },
   avatarText: { fontSize: 11, fontWeight: '800', color: colors.ink },
-  topbar: { minHeight: 68, paddingHorizontal: spacing.xl, backgroundColor: colors.surface, borderBottomWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  topbar: {
+    minHeight: sizing.header,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  topbarCompact: {
+    paddingHorizontal: spacing.lg,
+    flexWrap: 'wrap',
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
   mobileBrand: { flexBasis: '100%', flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  search: { minHeight: sizing.touchCompact + 4, maxWidth: 560, flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.md, paddingRight: spacing.xs, gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.canvas },
-  searchInput: { borderWidth: 0, backgroundColor: 'transparent', paddingHorizontal: 0, height: '100%', minHeight: 0 },
-  bellBadge: { position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: colors.warning, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  search: {
+    minHeight: sizing.touchCompact + 4,
+    maxWidth: 560,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.canvas,
+  },
+  searchCompact: { minWidth: 120 },
+  searchInput: {
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    paddingHorizontal: 0,
+    height: '100%',
+    minHeight: 0,
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.warning,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
   bellBadgeText: { fontSize: 10, fontWeight: '800', color: colors.surface },
-  topAvatar: { minWidth: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2E7DD', paddingHorizontal: 6 },
+  topAvatar: {
+    minWidth: 36,
+    height: 36,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F2E7DD',
+    paddingHorizontal: 6,
+  },
   content: { width: '100%', maxWidth: sizing.contentMax, alignSelf: 'center', padding: spacing.xl, paddingBottom: 72 },
   contentPhone: { padding: spacing.lg, paddingBottom: 108 },
-  bottomNav: { height: 72, flexDirection: 'row', backgroundColor: colors.surface, borderTopWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.xs, paddingBottom: Platform.OS === 'ios' ? spacing.sm : 0 },
+  bottomNav: {
+    height: sizing.bottomNav,
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.xs,
+    paddingBottom: Platform.OS === 'ios' ? spacing.sm : 0,
+  },
   bottomItem: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', gap: 3 },
-  bottomIconWrap: { width: 46, height: 30, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
+  bottomIconWrap: {
+    width: 46,
+    height: 30,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   bottomIconWrapActive: { backgroundColor: colors.brandMuted },
-  bottomBadge: { position: 'absolute', top: -3, right: 0, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: colors.warning, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  bottomBadge: {
+    position: 'absolute',
+    top: -3,
+    right: 0,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.warning,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
   bottomBadgeText: { fontSize: 9, fontWeight: '800', color: colors.surface },
   bottomText: { fontSize: 10.5, color: colors.muted },
   bottomTextActive: { color: colors.brandDark, fontWeight: '800' },
-  fab: { position: 'absolute', bottom: 88, right: spacing.lg, height: 56, width: 56, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand, ...shadows.floating },
-  toast: { position: 'absolute', bottom: 28, maxWidth: 430, alignSelf: 'center', borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, backgroundColor: '#203125', flexDirection: 'row', gap: spacing.sm, alignItems: 'center', ...shadows.floating },
+  fab: {
+    position: 'absolute',
+    bottom: 88,
+    right: spacing.lg,
+    height: sizing.fab,
+    width: sizing.fab,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.brand,
+    ...shadows.floating,
+  },
+  toast: {
+    position: 'absolute',
+    bottom: 28,
+    maxWidth: 430,
+    alignSelf: 'center',
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: '#203125',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'center',
+    ...shadows.floating,
+  },
   toastPhone: { bottom: 100 },
   toastText: { color: colors.surface, fontSize: 12.5, flexShrink: 1 },
 });
