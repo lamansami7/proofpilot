@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Feather } from './Feather';
 import { colors, shadows, spacing, type } from '../design/tokens';
 import { Banner, Button, Card, Input } from './ui';
 
@@ -21,6 +21,7 @@ export function friendlyAuthError(message: string): string {
 }
 
 export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (email: string) => Promise<void>; onSubmit: (email: string, password: string, signUp: boolean) => Promise<AuthResult> }) {
+  const compact = useWindowDimensions().width < 380;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [signUp, setSignUp] = useState(false);
@@ -55,7 +56,7 @@ export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (e
   };
 
   return (
-    <View style={styles.page}>
+    <ScrollView contentContainerStyle={[styles.page, { flexGrow: 1 }]} keyboardShouldPersistTaps="handled">
       <View style={styles.brandRow}>
         <View style={styles.logo}><Feather name="shield" size={22} color={colors.ink} /></View>
         <View>
@@ -63,7 +64,7 @@ export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (e
           <Text style={styles.brandTag}>PURCHASE PROTECTION</Text>
         </View>
       </View>
-      <Card style={styles.card}>
+      <Card style={[styles.card, compact && { padding: spacing.lg }]} >
         <Text style={type.display}>{signUp ? 'Start protecting purchases' : 'Welcome back'}</Text>
         <Text style={[type.body, { marginTop: spacing.sm }]}>Sign in to keep your purchase protection record private and in sync.</Text>
         {info ? <View style={{ marginTop: spacing.lg }}><Banner tone="info" icon="mail" title="Check your inbox" message={info} /></View> : null}
@@ -77,12 +78,12 @@ export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (e
         <Button disabled={loading} label={signUp ? 'I already have an account' : 'Create an account instead'} onPress={() => { setSignUp(!signUp); setError(''); setInfo(''); }} variant="ghost" fullWidth />
         <Text style={[type.caption, { textAlign: 'center', marginTop: spacing.md }]}>Account and synchronized purchase data are processed by Supabase. Document files remain on this device; keep your originals.</Text>
       </Card>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, justifyContent: 'center', padding: spacing.lg, backgroundColor: colors.canvas },
+  page: { justifyContent: 'center', padding: spacing.lg, backgroundColor: colors.canvas },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, alignSelf: 'center', marginBottom: spacing.xl, width: '100%', maxWidth: 460 },
   logo: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand },
   brandName: { fontSize: 18, fontWeight: '800', letterSpacing: -0.6, color: colors.ink },

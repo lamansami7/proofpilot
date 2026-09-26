@@ -65,7 +65,7 @@ export function DocumentViewer({ document, onClose }: { document: ViewableDocume
       if (Platform.OS === 'web') { await open(); return; }
       const ok = await openDocumentFile(document);
       if (!ok) setOpenFailed(true); else setShared(true);
-    } catch { /* user cancelled */ }
+    } catch { setOpenFailed(true); }
   };
 
   return (
@@ -73,11 +73,12 @@ export function DocumentViewer({ document, onClose }: { document: ViewableDocume
       <View style={styles.metaRow}>
         <Badge label={documentKindLabel(document.kind)} tone="brand" />
         {document.addedAt ? <Text style={type.caption}>Added {formatDate(document.addedAt)}</Text> : null}
+        {document.sizeBytes ? <Text style={type.caption}>{(document.sizeBytes / 1024).toFixed(1)} KB</Text> : null}
         {document.mimeType ? <Text style={type.caption}>{document.mimeType}</Text> : null}
       </View>
       {isImageDoc(document) && previewUrl ? (
         <View style={styles.previewFrame}>
-          <Image source={{ uri: previewUrl }} style={styles.previewImage} resizeMode="contain" accessibilityLabel={`Preview of ${document.name}`} />
+          <Image source={{ uri: previewUrl }} style={styles.previewImage} resizeMode="contain" accessibilityLabel={`Preview of ${document.name}`} onError={() => { setPreviewState('unavailable'); setPreviewUrl(null); }} />
         </View>
       ) : isImageDoc(document) && previewState === 'loading' ? (
         <View style={styles.previewLoading} accessibilityLiveRegion="polite">
@@ -97,7 +98,7 @@ export function DocumentViewer({ document, onClose }: { document: ViewableDocume
         <>
           <Banner tone="info" icon="hard-drive" title="Stored on this device" message="This file was captured from your device and is not uploaded anywhere in this build." />
           <View style={styles.actionRow}>
-            <Button label={Platform.OS === 'web' ? 'Open / download file' : 'Open file'} icon="external-link" onPress={open} style={{ flex: 1 }} />
+            <Button label={Platform.OS === 'web' ? 'Open / download file' : 'Open / share file'} icon="external-link" onPress={open} style={{ flex: 1 }} />
             <Button label={shared ? 'Ready' : Platform.OS === 'web' ? 'Download' : 'Share'} icon={shared ? 'check' : 'share'} variant="secondary" onPress={share} style={{ flex: 1 }} />
           </View>
           {openFailed ? <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm }]}>This file can’t be opened right now — its local copy may have been cleared. Retry, or reattach the original from the purchase record.</Text> : null}

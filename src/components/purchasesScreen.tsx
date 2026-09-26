@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { colors, radius, spacing, type } from '../design/tokens';
 import {
   filterPurchases,
@@ -215,7 +215,7 @@ const styles = StyleSheet.create({
   controlsTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md, flexWrap: 'wrap' },
   controlsMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
   dot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.brandStrong },
-  sortRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', alignItems: 'center' },
+  sortRow: { maxWidth: '100%', flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', alignItems: 'center' },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'center' },
   filterDivider: { width: 1, backgroundColor: colors.border, alignSelf: 'stretch', marginVertical: 2, minHeight: 24, borderRadius: radius.pill },
   categoryRow: { gap: spacing.sm, paddingVertical: 2 },

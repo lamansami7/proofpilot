@@ -1,7 +1,7 @@
 import { contextFor, claimTemplate } from '../services/ai/purchaseContext';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { createAIService, type AIService, type ClaimType } from '../services/ai/AIService';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { formatDate, formatMoney, isoDate } from '../lib/purchaseSelectors';

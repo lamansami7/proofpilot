@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { colors, radius, shadows, spacing, type } from '../design/tokens';
 import {
   deadlineTypeLabel,

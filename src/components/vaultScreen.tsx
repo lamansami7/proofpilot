@@ -1,10 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { colors, radius, spacing, type, shadows } from '../design/tokens';
 import { deriveProtection, documentInventory, formatDate, type IndexedDocument } from '../lib/purchaseSelectors';
 import type { FeatherIconName, Purchase } from '../types/purchase';
-import { deleteDocumentFile } from '../lib/documents';
 import { Badge, Banner, Button, Card, Chip, EmptyState, IconButton, Input, PageHeader, Sheet } from './ui';
 import { DocumentViewer, type ViewableDocument } from './documentViewer';
 
@@ -56,11 +55,7 @@ export function VaultScreen({
         }),
       });
       if (viewing?.id === document.id) setViewing(null);
-      const shared = items.some((p) =>
-        p.documents.some((d) => d.uri && d.uri === document.uri && !(p.id === document.purchase.id && d.id === document.id)),
-      );
-      if (!shared)
-        await deleteDocumentFile(document).catch(() => setError('Record removed; the unused file could not be cleaned up on this device.'));
+      // File deletion is queued atomically with the record by the purchase store.
       setPendingDelete(null);
     } catch {
       setError('Nothing was deleted. The record could not be saved. Please retry.');

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { validatePurchaseFields } from '../lib/purchaseValidation';
 import { persistDocumentUri } from '../lib/documents';
@@ -23,7 +23,7 @@ const tints = ['#E7EDFF', '#FAE8DB', '#E3F1E9', '#FBE9EA', '#F1E8FA', '#EAF2F8',
 function formFor(purchase: Purchase): Form { return { name: purchase.name, merchant: purchase.merchant, price: purchase.price?.toString() ?? '', purchaseDate: purchase.purchaseDate ?? '', category: purchase.category, serial: purchase.serial ?? '', model: purchase.model ?? '', returnDeadline: purchase.returnDeadline ?? '', warrantyEnd: purchase.warrantyEnd ?? '', warrantyProvider: purchase.warrantyProvider ?? '', notes: purchase.notes ?? '' }; }
 async function documentFor(asset: DocumentPicker.DocumentPickerAsset, kind: DocumentKind): Promise<PurchaseDocument> {
   const uri = asset.uri ? await persistDocumentUri(asset.uri, asset.name) : null;
-  return { id: `document-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, uri, addedAt: isoDate(new Date()) };
+  return { id: `document-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, sizeBytes: asset.size ?? null, uri, addedAt: isoDate(new Date()) };
 }
 
 function purchaseFromForm(form: Form, documents: PurchaseDocument[], customDeadlines: PurchaseDeadline[], existing?: Purchase): Purchase {
@@ -75,7 +75,7 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
       if (result.canceled) { setUpload('idle'); return; }
       const document = await documentFor(result.assets[0], kind);
       setDocuments((current) => (kind === 'receipt' ? [...current.filter((item) => item.kind !== 'receipt'), document] : [...current, document]));
-      setUpload('success');
+      setUpload('success'); setStep('form');
     } catch { setUpload('error'); }
   };
 
@@ -87,9 +87,9 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (result.canceled) { setUpload('idle'); return; }
       const asset = result.assets[0];
-      const name = asset.fileName ?? 'Scanned receipt.jpg';
+      const name = asset.fileName ?? 'Receipt photo.jpg';
       const uri = asset.uri ? await persistDocumentUri(asset.uri, name) : null;
-      setDocuments((current) => [...current.filter((document) => document.kind !== 'receipt'), { id: `receipt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, kind: 'receipt', mimeType: asset.mimeType ?? 'image/jpeg', uri, addedAt: isoDate(new Date()) }]);
+      setDocuments((current) => [...current.filter((document) => document.kind !== 'receipt'), { id: `receipt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, kind: 'receipt', mimeType: asset.mimeType ?? 'image/jpeg', sizeBytes: asset.fileSize ?? null, uri, addedAt: isoDate(new Date()) }]);
       setUpload('success'); setStep('form');
     } catch { setUpload('error'); }
   };
@@ -120,7 +120,7 @@ function StartStep({ onManual, onScan, onUpload, upload }: { onManual: () => voi
   const cameraUnavailable = Platform.OS === 'web';
   return (
     <>
-      <Method icon="camera" title="Scan a receipt" detail={cameraUnavailable ? 'Camera capture is available in the mobile app — upload or enter details here.' : 'Photograph the receipt with your camera.'} onPress={cameraUnavailable ? onUpload : onScan} disabled={cameraUnavailable} state={upload} />
+      <Method icon="camera" title="Photograph a receipt" detail={cameraUnavailable ? 'Camera capture is available in the mobile app — upload or enter details here.' : 'Photograph the receipt with your camera.'} onPress={cameraUnavailable ? onUpload : onScan} disabled={cameraUnavailable} state={upload} />
       <Method icon="upload" title="Upload a receipt or document" detail="PDF or image. Stored on this device." onPress={onUpload} state={upload} />
       <Method icon="edit-3" title="Enter details manually" detail="The fastest way if the receipt isn’t handy." onPress={onManual} />
       <Banner tone="brand" icon="info" title="Automatic receipt reading is not connected in this build" message="Your file is attached as-is. Enter or confirm the purchase details yourself — nothing is guessed." />
@@ -131,7 +131,7 @@ function StartStep({ onManual, onScan, onUpload, upload }: { onManual: () => voi
 function Method({ icon, title, detail, onPress, state, disabled }: { icon: FeatherIconName; title: string; detail: string; onPress: () => void; state?: UploadState; disabled?: boolean }) {
   const status = state === 'processing' ? 'Attaching file…' : state === 'success' ? 'Document attached — confirm the details below.' : state === 'error' ? 'Could not read that file. Try again or continue without it.' : detail;
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: Boolean(disabled) }} onPress={onPress} style={interactive([styles.method, disabled ? { opacity: 0.72 } : null], { hover: { ...styles.method, borderColor: colors.borderStrong, backgroundColor: colors.surface } })}>
+    <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: Boolean(disabled) }} disabled={disabled || state === 'processing'} onPress={onPress} style={interactive([styles.method, disabled ? { opacity: 0.72 } : null], { hover: { ...styles.method, borderColor: colors.borderStrong, backgroundColor: colors.surface } })}>
       <View style={styles.methodIcon}><Feather name={icon} size={20} color={colors.brandDark} /></View>
       <View style={{ flex: 1 }}>
         <Text style={type.label}>{title}</Text>

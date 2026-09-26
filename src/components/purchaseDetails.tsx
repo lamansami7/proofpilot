@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import { Platform, Share, StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { colors, radius, spacing, type, shadows } from '../design/tokens';
 import { persistDocumentUri } from '../lib/documents';
 import {
@@ -122,6 +122,7 @@ export function PurchaseDetails({
           name: asset.name,
           kind,
           mimeType: asset.mimeType ?? null,
+          sizeBytes: asset.size ?? null,
           uri,
           addedAt: isoDate(new Date()),
         };

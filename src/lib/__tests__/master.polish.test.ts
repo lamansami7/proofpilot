@@ -30,7 +30,7 @@ describe('Design system — premium, restrained, consistent', () => {
     expect(radius.lg).toBe(16);
     expect(radius.pill).toBe(999);
     expect(sizing.touch).toBe(44);
-    expect(sizing.touchCompact).toBe(38);
+    expect(sizing.touchCompact).toBeGreaterThanOrEqual(44);
     expect(shadows.card.shadowOpacity).toBeLessThan(0.1);
     expect(shadows.floating.shadowOpacity).toBeGreaterThan(shadows.card.shadowOpacity as number);
     expect(type.display.fontSize).toBeGreaterThan(type.title.fontSize as number);

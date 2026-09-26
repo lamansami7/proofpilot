@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { colors, radius, shadows, spacing, type } from '../design/tokens';
 import {
   actionNeeded,
@@ -125,8 +125,8 @@ export function Dashboard(props: DashboardProps) {
           <Card style={styles.featureCard}>
             <Feature
               icon="corner-up-left"
-              title="Never miss a return window"
-              body="Return deadlines and warranty expirations are grouped by urgency in Deadline Radar."
+              title="Know your next deadline"
+              body="Your saved dates are grouped by urgency in Deadline Radar. No notifications are sent."
             />
             <Feature
               icon="archive"
@@ -381,6 +381,7 @@ function ProtectionOverview({
         )}
       </View>
       <View
+        accessibilityRole="image"
         accessibilityLabel={`${summary.protected} protected, ${summary.attention} need attention, ${summary.unprotected} unprotected`}
         style={styles.progressTrack}
       >

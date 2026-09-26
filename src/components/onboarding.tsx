@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { Button, Card } from './ui';
 import type { FeatherIconName } from '../types/purchase';

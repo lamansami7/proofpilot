@@ -15,7 +15,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { breakpoints, colors, radius, shadows, sizing, spacing, type, webTransition } from '../design/tokens';
 import type { FeatherIconName } from '../types/purchase';
 
@@ -99,6 +99,8 @@ export function Button({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
+      aria-disabled={Boolean(disabled || loading)}
+      aria-busy={Boolean(loading)}
       accessibilityHint={loading ? 'Loading' : undefined}
       hitSlop={2}
       disabled={disabled || loading}
@@ -245,11 +247,12 @@ export function PageHeader({
   secondaryLabel?: string;
   onSecondary?: () => void;
 }) {
+  const compact = useWindowDimensions().width < 768;
   return (
-    <View style={styles.pageHeader}>
-      <View style={{ flex: 1, minWidth: 0 }}>
+    <View style={[styles.pageHeader, compact && { flexDirection: 'column', alignItems: 'stretch' }]}>
+      <View style={{ flex: compact ? undefined : 1, minWidth: compact ? 0 : 240 }}>
         {eyebrow ? <Text style={type.eyebrow}>{eyebrow}</Text> : null}
-        <Text style={type.display}>{title}</Text>
+        <Text accessibilityRole="header" style={type.display}>{title}</Text>
         {description ? <Text style={[type.body, styles.pageHeaderDesc]}>{description}</Text> : null}
       </View>
       {actionLabel && onAction ? (
@@ -308,6 +311,7 @@ export type InputProps = TextInputProps & {
 };
 export const Input = React.forwardRef<TextInput, InputProps>(function Input(props, ref) {
   const { label, error, prefix, hint, containerStyle, ...inputProps } = props;
+  const descriptionId = React.useId();
   return (
     <View style={[inputProps.multiline ? { flex: 1 } : null, containerStyle]}>
       {label ? <Text style={styles.inputLabel}>{label}</Text> : null}
@@ -324,6 +328,7 @@ export const Input = React.forwardRef<TextInput, InputProps>(function Input(prop
           accessibilityLabel={inputProps.accessibilityLabel ?? label}
           accessibilityState={error ? { disabled: false } : undefined}
           aria-invalid={Boolean(error) as unknown as boolean}
+          aria-describedby={error || hint ? descriptionId : undefined}
           placeholderTextColor={colors.subtle}
           {...inputProps}
           style={[
@@ -335,11 +340,11 @@ export const Input = React.forwardRef<TextInput, InputProps>(function Input(prop
         />
       </View>
       {error ? (
-        <Text accessibilityLiveRegion="polite" style={styles.inputError}>
+        <Text nativeID={descriptionId} accessibilityLiveRegion="polite" style={styles.inputError}>
           <Feather name="alert-circle" size={12} color={colors.danger} /> {error}
         </Text>
       ) : hint ? (
-        <Text style={styles.inputHint}>{hint}</Text>
+        <Text nativeID={descriptionId} style={styles.inputHint}>{hint}</Text>
       ) : null}
     </View>
   );
@@ -389,6 +394,7 @@ export function Chip({
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected: Boolean(selected) }}
+      aria-pressed={Boolean(selected)}
       onPress={onPress}
       style={interactive([styles.chip, ...(selected ? [styles.chipActive] : [])], {
         hover: { backgroundColor: selected ? colors.brand : colors.surfaceMuted },
@@ -459,20 +465,11 @@ export function Sheet({
       subscription.remove();
     };
   }, []);
-  useEffect(() => {
-    if (!visible || Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', escape);
-    return () => window.removeEventListener('keydown', escape);
-  }, [visible, onClose]);
+  // React Native Web's Modal owns active-dialog Escape, focus trapping and
+  // focus restoration. An extra global Escape handler closes nested parents.
   if (!visible) return null;
   return (
-    <Modal transparent visible animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={onClose}>
+    <Modal accessibilityLabel={title ?? 'Dialog'} transparent visible animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={onClose}>
       <View style={[styles.sheetRoot, phone ? null : styles.sheetRootCentered]}>
         <Pressable
           accessibilityRole="button"
