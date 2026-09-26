@@ -38,7 +38,7 @@ const deadlineTone = (status: NormalizedDeadline['status']) =>
 const daysLabel = (days: number) =>
   days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Due today' : days === 1 ? '1 day left' : `${days} days left`;
 
-export function DeadlineRow({ deadline, onPress }: { deadline: NormalizedDeadline; onPress: () => void }) {
+export const DeadlineRow = React.memo(function DeadlineRow({ deadline, onPress }: { deadline: NormalizedDeadline; onPress: () => void }) {
   return (
     <Card
       onPress={onPress}
@@ -60,9 +60,9 @@ export function DeadlineRow({ deadline, onPress }: { deadline: NormalizedDeadlin
       </View>
     </Card>
   );
-}
+});
 
-export function AttentionRow({ action, onPress }: { action: ActionNeeded; onPress: () => void }) {
+export const AttentionRow = React.memo(function AttentionRow({ action, onPress }: { action: ActionNeeded; onPress: () => void }) {
   const urgent = action.kind === 'deadline';
   return (
     <Card
@@ -87,14 +87,14 @@ export function AttentionRow({ action, onPress }: { action: ActionNeeded; onPres
       </View>
     </Card>
   );
-}
+});
 
-export function PurchaseCard({ item, onPress }: { item: Purchase; onPress: () => void }) {
+export const PurchaseCard = React.memo(function PurchaseCard({ item, onPress }: { item: Purchase; onPress: () => void }) {
   const next = nextDeadlineFor(item);
   const statusTone =
     deriveProtection(item) === 'protected' ? 'success' : deriveProtection(item) === 'attention' ? 'warning' : 'neutral';
   return <PressableCard item={item} onPress={onPress} statusTone={statusTone} next={next} />;
-}
+});
 
 function PressableCard({
   item,

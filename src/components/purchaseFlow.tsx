@@ -23,7 +23,7 @@ const tints = ['#E7EDFF', '#FAE8DB', '#E3F1E9', '#FBE9EA', '#F1E8FA', '#EAF2F8',
 function formFor(purchase: Purchase): Form { return { name: purchase.name, merchant: purchase.merchant, price: purchase.price?.toString() ?? '', purchaseDate: purchase.purchaseDate ?? '', category: purchase.category, serial: purchase.serial ?? '', model: purchase.model ?? '', returnDeadline: purchase.returnDeadline ?? '', warrantyEnd: purchase.warrantyEnd ?? '', warrantyProvider: purchase.warrantyProvider ?? '', notes: purchase.notes ?? '' }; }
 async function documentFor(asset: DocumentPicker.DocumentPickerAsset, kind: DocumentKind): Promise<PurchaseDocument> {
   const uri = asset.uri ? await persistDocumentUri(asset.uri, asset.name) : null;
-  return { id: `document-${Date.now()}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, uri, addedAt: isoDate(new Date()) };
+  return { id: `document-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, uri, addedAt: isoDate(new Date()) };
 }
 
 function purchaseFromForm(form: Form, documents: PurchaseDocument[], customDeadlines: PurchaseDeadline[], existing?: Purchase): Purchase {
@@ -31,7 +31,7 @@ function purchaseFromForm(form: Form, documents: PurchaseDocument[], customDeadl
   const returnDeadline = form.returnDeadline || null;
   const warrantyEnd = form.warrantyEnd || null;
   const hasReceipt = documents.some((document) => document.kind === 'receipt');
-  const id = existing?.id ?? `local-${Date.now()}`;
+  const id = existing?.id ?? `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const carriedDeadlines = customDeadlines;
   return {
     id,
@@ -88,7 +88,7 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
       const asset = result.assets[0];
       const name = asset.fileName ?? 'Scanned receipt.jpg';
       const uri = asset.uri ? await persistDocumentUri(asset.uri, name) : null;
-      setDocuments((current) => [...current.filter((document) => document.kind !== 'receipt'), { id: `receipt-${Date.now()}`, name, kind: 'receipt', mimeType: asset.mimeType ?? 'image/jpeg', uri, addedAt: isoDate(new Date()) }]);
+      setDocuments((current) => [...current.filter((document) => document.kind !== 'receipt'), { id: `receipt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, kind: 'receipt', mimeType: asset.mimeType ?? 'image/jpeg', uri, addedAt: isoDate(new Date()) }]);
       setUpload('success'); setStep('form');
     } catch { setUpload('error'); }
   };
@@ -161,7 +161,7 @@ function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDe
   const focusNext = (next: React.RefObject<TextInput | null>) => { try { next.current?.focus(); } catch { /* platform refused focus — keyboard stays put */ } };
   const deadlineValid = Boolean(deadlineTitle.trim() && isValidIsoDate(deadlineDate));
   const savedDeadlinesValid = customDeadlines.every((deadline) => Boolean(deadline.title.trim() && isValidIsoDate(deadline.date)));
-  const addDeadline = () => { if (!deadlineValid) return; onCustomDeadlinesChange([...customDeadlines, { id: `deadline-${Date.now()}`, title: deadlineTitle.trim(), date: deadlineDate, type: deadlineType }]); setDeadlineTitle(''); setDeadlineDate(''); };
+  const addDeadline = () => { if (!deadlineValid) return; onCustomDeadlinesChange([...customDeadlines, { id: `deadline-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, title: deadlineTitle.trim(), date: deadlineDate, type: deadlineType }]); setDeadlineTitle(''); setDeadlineDate(''); };
   return (
     <>
       <Text style={styles.stepHeading}>Purchase details</Text>
@@ -218,8 +218,12 @@ function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDe
 
       <Text style={styles.stepHeading}>Product & documents</Text>
       <View style={styles.row}>
-        <Input label="SERIAL NUMBER" value={form.serial} onChangeText={(value) => update('serial', value)} placeholder="Optional" autoCapitalize="characters" />
-        <Input label="MODEL NUMBER" value={form.model} onChangeText={(value) => update('model', value)} placeholder="Optional" />
+        <View style={{ flex: 1, minWidth: 140 }}>
+          <Input label="SERIAL NUMBER" value={form.serial} onChangeText={(value) => update('serial', value)} placeholder="Optional" autoCapitalize="characters" />
+        </View>
+        <View style={{ flex: 1, minWidth: 140 }}>
+          <Input label="MODEL NUMBER" value={form.model} onChangeText={(value) => update('model', value)} placeholder="Optional" />
+        </View>
       </View>
       <View style={{ height: spacing.md }} />
       <Input label="NOTES" value={form.notes} onChangeText={(value) => update('notes', value)} placeholder="Anything else worth remembering" multiline />

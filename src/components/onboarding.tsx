@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
   dot: { width: 28, height: 6, borderRadius: radius.pill, backgroundColor: colors.border },
   dotActive: { backgroundColor: colors.brandDark, width: 32 },
   dotDone: { backgroundColor: colors.brand, width: 24 },
-  card: { padding: spacing.xxl, alignItems: 'center', gap: spacing.md },
+  card: { padding: spacing.xxl, alignItems: 'center', gap: spacing.md, borderColor: colors.borderSubtle },
   icon: {
     width: 64,
     height: 64,

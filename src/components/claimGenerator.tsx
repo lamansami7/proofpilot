@@ -73,7 +73,7 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
     if (!onSaveDraft) return;
     setVaultState('saving');
     try { await onSaveDraft({
-      id: `claim-${Date.now()}`,
+      id: `claim-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name: `${claimType === 'return' ? 'Return' : 'Warranty'} claim draft — ${purchase.name} (${isoDate(new Date())})`,
       kind: 'claim',
       mimeType: 'text/plain',

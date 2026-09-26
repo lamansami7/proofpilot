@@ -118,7 +118,7 @@ export function PurchaseDetails({
         const asset = result.assets[0];
         const uri = asset.uri ? await persistDocumentUri(asset.uri, asset.name) : null;
         const document: PurchaseDocument = {
-          id: `document-${Date.now()}`,
+          id: `document-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           name: asset.name,
           kind,
           mimeType: asset.mimeType ?? null,
@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     marginBottom: spacing.md,
   },
-  proofCard: { padding: spacing.lg, backgroundColor: colors.surface, borderColor: colors.borderSubtle, marginBottom: spacing.md, ...shadows.soft },
+  proofCard: { padding: spacing.xl, backgroundColor: colors.surface, borderColor: colors.borderSubtle, marginBottom: spacing.md, ...shadows.soft, borderLeftWidth: 3, borderLeftColor: colors.brand },
   proofHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   proofIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center' },
   protectionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },

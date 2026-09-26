@@ -570,11 +570,11 @@ export function EmptyState({
 }) {
   return (
     <Card style={compact ? [styles.state, styles.stateCompact] : styles.state}>
-      <View style={styles.stateIcon}>
-        <Feather name={icon} size={22} color={colors.brandDark} />
+      <View style={[styles.stateIcon, compact ? styles.stateIconCompact : null]}>
+        <Feather name={icon} size={compact ? 20 : 24} color={colors.brandDark} />
       </View>
-      <Text style={[type.heading, { textAlign: 'center' }]}>{title}</Text>
-      <Text style={[type.body, styles.stateMessage]}>{message}</Text>
+      <Text style={[compact ? type.heading : type.title, { textAlign: 'center', maxWidth: 440 }]}>{title}</Text>
+      <Text style={[type.body, styles.stateMessage, { color: colors.inkSecondary, lineHeight: 21 }]}>{message}</Text>
       {(actionLabel && onAction) || (secondaryLabel && onSecondary) ? (
         <View style={styles.stateActions}>
           {actionLabel && onAction ? <Button label={actionLabel} onPress={onAction} icon="plus" /> : null}
@@ -849,17 +849,20 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1,
   },
-  state: { alignItems: 'center', padding: spacing.xxl, gap: spacing.sm },
-  stateCompact: { padding: spacing.xl },
+  state: { alignItems: 'center', padding: spacing.xxl, gap: spacing.md, minHeight: 220, justifyContent: 'center' },
+  stateCompact: { padding: spacing.xl, minHeight: 180 },
   stateIcon: {
-    width: 48,
-    height: 48,
+    width: 52,
+    height: 52,
     borderRadius: radius.lg,
     backgroundColor: colors.brandMuted,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#DDE9CA',
   },
+  stateIconCompact: { width: 44, height: 44, borderRadius: radius.md },
   stateMessage: { textAlign: 'center', maxWidth: 420, marginTop: 2 },
   stateActions: {
     flexDirection: 'row',

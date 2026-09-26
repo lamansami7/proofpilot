@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
   section: { marginTop: spacing.xl },
   sectionHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
   docCard: { overflow: 'hidden', borderRadius: radius.lg, ...shadows.card },
-  documentRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md },
+  documentRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, flexWrap: 'wrap' },
   documentRowBorder: { borderTopWidth: 1, borderColor: colors.borderSubtle },
   docIcon: { width: 32, height: 32, borderRadius: radius.sm, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center' },
   emptyCard: {

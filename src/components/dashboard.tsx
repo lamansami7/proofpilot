@@ -142,8 +142,8 @@ export function Dashboard(props: DashboardProps) {
         </>
       ) : (
         <>
-          {/* Hero */}
-          <View style={styles.hero}>
+          {/* Hero — immediate protection picture within seconds */}
+          <View style={[styles.hero, isPhone && styles.heroPhone]}>
             <View style={styles.heroCopy}>
               <View style={styles.heroKicker}>
                 <Feather name="shield" size={14} color={colors.brand} />
@@ -500,6 +500,7 @@ const styles = StyleSheet.create({
     borderColor: '#25483E',
     ...shadows.raised,
   },
+  heroPhone: { padding: spacing.lg, borderRadius: 20, gap: spacing.lg },
   heroCopy: { flex: 1, flexBasis: 320, minWidth: 0 },
   heroKicker: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   heroEyebrow: { color: '#C6E0BD', fontSize: 10, letterSpacing: 1.4, fontWeight: '700', flexShrink: 1 },
