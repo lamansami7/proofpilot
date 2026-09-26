@@ -23,7 +23,7 @@ export function interactive(base: StyleProp<ViewStyle> | ReadonlyArray<StyleProp
 
 type ButtonProps = { label: string; onPress: () => void; icon?: FeatherIconName; variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; size?: 'md' | 'sm'; loading?: boolean; disabled?: boolean; fullWidth?: boolean; accessibilityLabel?: string; style?: ViewStyle };
 export function Button({ label, onPress, icon, variant = 'primary', size = 'md', loading, disabled, fullWidth, accessibilityLabel, style }: ButtonProps) {
-  const base: ViewStyle = { ...styles.button, ...(size === 'sm' ? styles.buttonSm : null), ...(fullWidth ? { alignSelf: 'stretch' } : null) };
+  const base: ViewStyle = { ...styles.button, ...(size === 'sm' ? styles.buttonSm : null), ...(fullWidth ? { alignSelf: 'stretch' } : null), ...(style ?? null) };
   const tone = variant === 'primary' ? styles.buttonPrimary : variant === 'secondary' ? styles.buttonSecondary : variant === 'danger' ? styles.buttonDanger : styles.buttonGhost;
   const hover: ViewStyle = variant === 'primary' ? { backgroundColor: colors.brandStrong } : variant === 'danger' ? { backgroundColor: '#F3D3D7' } : hoverStyle;
   return (
@@ -79,19 +79,19 @@ export function SectionHeader({ title, detail, actionLabel, onAction }: { title:
 }
 
 export type InputProps = TextInputProps & { label?: string; error?: string; prefix?: string; hint?: string; containerStyle?: ViewStyle };
-export function Input(props: InputProps) {
+export const Input = React.forwardRef<TextInput, InputProps>(function Input(props, ref) {
   const { label, error, prefix, hint, containerStyle, ...inputProps } = props;
   return (
     <View style={[inputProps.multiline ? { flex: 1 } : null, containerStyle]}>
       {label ? <Text style={styles.inputLabel}>{label}</Text> : null}
       <View style={[styles.inputShell, error ? styles.inputShellError : null, inputProps.multiline && styles.inputShellMultiline]}>
         {prefix ? <Text style={styles.inputPrefix}>{prefix}</Text> : null}
-        <TextInput accessibilityLabel={inputProps.accessibilityLabel ?? label} placeholderTextColor={colors.subtle} {...inputProps} style={[styles.input, prefix ? { paddingLeft: 6 } : null, inputProps.multiline && styles.inputMultiline, inputProps.style]} />
+        <TextInput ref={ref} accessibilityLabel={inputProps.accessibilityLabel ?? label} placeholderTextColor={colors.subtle} {...inputProps} style={[styles.input, prefix ? { paddingLeft: 6 } : null, inputProps.multiline && styles.inputMultiline, inputProps.style]} />
       </View>
       {error ? <Text accessibilityLiveRegion="polite" style={styles.inputError}><Feather name="alert-circle" size={12} color={colors.danger} /> {error}</Text> : hint ? <Text style={styles.inputHint}>{hint}</Text> : null}
     </View>
   );
-}
+});
 
 export function Chip({ label, selected, onPress, icon }: { label: string; selected?: boolean; onPress: () => void; icon?: FeatherIconName }) {
   return (
@@ -177,17 +177,6 @@ export function LoadingState({ label = 'Loading your vault…' }: { label?: stri
     <Card style={styles.state}>
       <ActivityIndicator color={colors.brandDark} />
       <Text style={[type.body, styles.stateMessage]}>{label}</Text>
-    </Card>
-  );
-}
-
-export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <Card style={styles.state}>
-      <View style={[styles.stateIcon, { backgroundColor: colors.dangerSurface }]}><Feather name="alert-circle" size={22} color={colors.danger} /></View>
-      <Text style={type.heading}>We couldn’t load this</Text>
-      <Text style={[type.body, styles.stateMessage]}>{message}</Text>
-      <Button label="Try again" onPress={onRetry} variant="secondary" icon="refresh-cw" style={{ marginTop: spacing.lg }} />
     </Card>
   );
 }

@@ -2,7 +2,7 @@ import { contextFor, claimTemplate } from '../services/ai/purchaseContext';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { createAIService, type AIService, type ClaimType, type PurchaseContext } from '../services/ai/AIService';
+import { createAIService, type AIService, type ClaimType } from '../services/ai/AIService';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { formatDate, formatMoney, isoDate } from '../lib/purchaseSelectors';
 import type { Purchase, PurchaseDocument } from '../types/purchase';
@@ -85,10 +85,6 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
   return (
     <Card style={styles.card}>
       <Banner tone="info" icon="file-text" title="Drafts, never submissions" message="Saved facts are user-entered, not independently verified. Review every statement and policy before sending. No claim is submitted by ProofPilot." />
-      <Button variant="secondary" icon="file-text" label="Use saved-facts template (no AI)" onPress={() => { setDraft(claimTemplate(purchase, claimType, issue)); setSource('Template'); setStatus('ready'); setVaultState('idle'); }} style={{ marginVertical: spacing.md }} />
-      {draft ? <Text style={type.caption}>{source === 'AI' ? 'AI-generated draft · may contain errors' : 'Deterministic template · saved facts only'}</Text> : null}
-      {vaultState === 'error' ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>Draft could not be saved. Your text is still here; retry.</Text> : null}
-      {vaultState === 'saved' ? <Text accessibilityLiveRegion="polite" style={{ color: colors.success }}>Draft saved to Vault.</Text> : null}
       <View style={styles.heading}>
         <View style={styles.icon}><Feather name="file-text" size={18} color={colors.brandDark} /></View>
         <View style={styles.flex}>
@@ -96,6 +92,7 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
           <Text style={type.bodySmall}>Drafts built only from your verified purchase facts.</Text>
         </View>
       </View>
+      <ClaimStepper active={status === 'ready' ? 3 : status === 'loading' ? 2 : issue.trim() ? 1 : 0} />
 
       <View style={styles.tabs}>
         {(['return', 'warranty'] as ClaimType[]).map((item) => (
@@ -125,19 +122,18 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
         </View>
       ) : <Banner tone="success" icon="check-circle" title="Core purchase fields are saved" message="The merchant or provider may still require more information." />}
 
-      {!assistant.isConfigured && status !== 'ready' ? (
-        <View style={{ marginTop: spacing.md }}>
-          <Banner tone="info" icon="lock" title="AI generation is not connected" message="Use the saved-facts template above, or copy these fields into your own message. Templates do not require AI." />
-          <Button label={copied ? 'Facts copied' : 'Copy saved facts'} icon={copied ? 'check' : 'copy'} variant="secondary" onPress={copyFacts} style={{ marginTop: spacing.md }} fullWidth />
-        </View>
-      ) : status === 'ready' ? (
+      {status === 'ready' ? (
         <View style={styles.draftBlock}>
           <Badge label={`${source === 'AI' ? 'AI-GENERATED' : 'TEMPLATE'} DRAFT — REVIEW BEFORE SENDING`} tone="warning" icon="alert-triangle" />
+          <Text style={type.caption}>{source === 'AI' ? 'AI-generated draft · may contain errors · verify every claim against your documents' : 'Deterministic template · built only from the saved facts above'}</Text>
           <TextInput accessibilityLabel="Editable claim draft" value={draft} onChangeText={value => { setDraft(value); setVaultState('idle'); }} multiline textAlignVertical="top" style={styles.editor} />
+          {vaultState === 'error' ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>Draft could not be saved. Your text is still here; retry.</Text> : null}
+          {vaultState === 'saved' ? <Text accessibilityLiveRegion="polite" style={{ color: colors.success }}>Draft saved to Vault.</Text> : null}
           <View style={styles.actions}>
             <Button size="sm" label={copied ? 'Copied' : 'Copy draft'} icon={copied ? 'check' : 'copy'} variant="secondary" onPress={copy} />
             <Button size="sm" label="Share / export" icon="share" variant="secondary" onPress={share} />
             {onSaveDraft ? <Button size="sm" label="Save to Vault" loading={vaultState === 'saving'} disabled={vaultState === 'saved'} icon="archive" variant="secondary" onPress={saveToVault} /> : null}
+            <Button size="sm" label="Start over" icon="edit-2" variant="ghost" onPress={() => { setDraft(''); setStatus('idle'); setVaultState('idle'); }} />
             <Button size="sm" label="Regenerate" icon="refresh-cw" variant="ghost" onPress={generate} disabled={!assistant.isConfigured} />
           </View>
           <Text style={type.caption}>ProofPilot never sends this claim for you — review, edit, and send it yourself.</Text>
@@ -145,19 +141,46 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
       ) : (
         <View style={{ marginTop: spacing.lg }}>
           <Input label="WHAT WENT WRONG? (OPTIONAL)" value={issue} onChangeText={setIssue} placeholder="e.g. The monitor flickers after 20 minutes of use" multiline containerStyle={{ marginBottom: spacing.md }} />
-          {status === 'loading' ? (
-            <View accessibilityLiveRegion="polite" style={styles.status}>
-              <ActivityIndicator size="small" color={colors.brandDark} />
-              <Text style={type.bodySmall}>Creating a draft using only the saved facts above…</Text>
-            </View>
+          <Button variant="secondary" icon="file-text" label="Create from saved facts (no AI)" onPress={() => { setDraft(claimTemplate(purchase, claimType, issue)); setSource('Template'); setStatus('ready'); setVaultState('idle'); }} fullWidth />
+          {assistant.isConfigured ? (
+            status === 'loading' ? (
+              <View accessibilityLiveRegion="polite" style={styles.status}>
+                <ActivityIndicator size="small" color={colors.brandDark} />
+                <Text style={type.bodySmall}>Creating a draft using only the saved facts above…</Text>
+              </View>
+            ) : (
+              <View style={{ marginTop: spacing.sm }}>
+                <Button label={`Generate ${claimType} claim draft with AI`} icon="file-text" onPress={generate} fullWidth />
+              </View>
+            )
           ) : (
-            <Button label={`Generate ${claimType} claim draft`} icon="file-text" onPress={generate} fullWidth />
+            <View style={{ marginTop: spacing.md }}>
+              <Banner tone="info" icon="lock" title="AI generation is not connected" message="Use the saved-facts template above, or copy these fields into your own message. Templates do not require AI." />
+              <Button label={copied ? 'Facts copied' : 'Copy saved facts'} icon={copied ? 'check' : 'copy'} variant="secondary" onPress={copyFacts} style={{ marginTop: spacing.md }} fullWidth />
+            </View>
           )}
-          {status === 'unavailable' ? <Banner tone="info" icon="lock" title="The secure AI service is temporarily unavailable" message="Try again shortly. Your purchase data has not changed." /> : null}
-          {status === 'error' ? <Banner tone="danger" icon="alert-circle" title="ProofPilot could not create a draft right now" message="Your purchase data has not changed. Try again shortly." /> : null}
+          {status === 'unavailable' ? <Banner tone="info" icon="lock" title="The secure AI service is temporarily unavailable" message="Try again shortly, or use the saved-facts template instead. Your purchase data has not changed." /> : null}
+          {status === 'error' ? <Banner tone="danger" icon="alert-circle" title="ProofPilot could not create a draft right now" message="Your purchase data has not changed. Try again, or use the saved-facts template." /> : null}
         </View>
       )}
     </Card>
+  );
+}
+
+const claimSteps = ['Verify facts', 'Add issue', 'Draft', 'Review & export'];
+
+function ClaimStepper({ active }: { active: number }) {
+  return (
+    <View accessibilityLabel={`Step ${active + 1} of ${claimSteps.length}: ${claimSteps[active]}`} style={styles.stepper}>
+      {claimSteps.map((label, index) => (
+        <React.Fragment key={label}>
+          <View style={[styles.step, index <= active && styles.stepActive]}>
+            <Text style={[styles.stepText, index <= active && styles.stepTextActive]} numberOfLines={1}>{index + 1}. {label}</Text>
+          </View>
+          {index < claimSteps.length - 1 ? <Feather name="chevron-right" size={12} color={colors.subtle} /> : null}
+        </React.Fragment>
+      ))}
+    </View>
   );
 }
 
@@ -179,4 +202,9 @@ const styles = StyleSheet.create({
   draftBlock: { marginTop: spacing.lg, gap: spacing.sm },
   editor: { minHeight: 210, padding: spacing.md, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.md, backgroundColor: colors.surface, color: colors.ink, fontSize: 14, lineHeight: 21 },
   actions: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.md, flexWrap: 'wrap' },
+  step: { paddingHorizontal: spacing.sm + 2, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.surfaceMuted, borderWidth: 1, borderColor: colors.border },
+  stepActive: { backgroundColor: colors.brandMuted, borderColor: colors.brand },
+  stepText: { ...type.caption, fontSize: 10.5, fontWeight: '700' },
+  stepTextActive: { color: colors.ink, fontWeight: '800' },
 });

@@ -30,3 +30,6 @@ export const type: Record<'display' | 'title' | 'heading' | 'subheading' | 'body
 
 /** Web-only niceties; ignored on native. */
 export const webTransition: ViewStyle = { transitionProperty: 'background-color, border-color, opacity, box-shadow', transitionDuration: '130ms' } as ViewStyle;
+
+/** Keep in sync with package.json and app.json (expo.version). */
+export const APP_VERSION = '2.0.0';

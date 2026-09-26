@@ -2,12 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { demoPurchases } from '../data/demoPurchases';
 import { deletePurchase, listPurchases, savePurchase } from '../lib/purchaseRepository';
-import { LocalPurchaseStore, mergeCloud, readSnapshot, snapshotFor, type Snapshot } from '../lib/localPurchaseStore';
+import { LocalPurchaseStore, mergeCloud, readSnapshot, removeItem, replaceItems, snapshotFor, storageKeyFor, upsertItem, type Snapshot } from '../lib/localPurchaseStore';
 import type { Purchase } from '../types/purchase';
 
-export const PURCHASE_STORAGE_KEY = 'proofpilot.v1.purchases';
 export type SyncStatus = 'local' | 'syncing' | 'synced' | 'error';
-export type PurchaseStore = ReturnType<typeof usePurchaseStore>;
 
 export function usePurchaseStore(userId?: string | null) {
   const [items, setItems] = useState<Purchase[]>([]);
@@ -16,13 +14,14 @@ export function usePurchaseStore(userId?: string | null) {
   const [storageError, setStorageError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('local');
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine !== false));
   const engine = useRef<LocalPurchaseStore | null>(null);
   const syncRunning = useRef<LocalPurchaseStore | null>(null);
   const account = useRef(userId); account.current = userId;
 
   useEffect(() => {
     let cancelled = false;
-    const key = userId ? `${PURCHASE_STORAGE_KEY}.account.${userId}` : PURCHASE_STORAGE_KEY;
+    const key = storageKeyFor(userId);
     const store = new LocalPurchaseStore(snapshot => AsyncStorage.setItem(key, JSON.stringify(snapshot)));
     engine.current = null; setHydrated(false); setItems([]); setStorageError(null); setSyncError(null);
     setSyncStatus(userId ? 'syncing' : 'local');
@@ -83,9 +82,11 @@ export function usePurchaseStore(userId?: string | null) {
   useEffect(() => { if (hydrated) void retrySync(); }, [hydrated, retrySync]);
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const online = () => { void retrySync(); };
-    window.addEventListener('online', online);
-    return () => window.removeEventListener('online', online);
+    const onlineEvent = () => { setOnline(true); void retrySync(); };
+    const offlineEvent = () => setOnline(false);
+    window.addEventListener('online', onlineEvent);
+    window.addEventListener('offline', offlineEvent);
+    return () => { window.removeEventListener('online', onlineEvent); window.removeEventListener('offline', offlineEvent); };
   }, [retrySync]);
 
   const change = useCallback(async (operation: (s: Snapshot) => Snapshot) => {
@@ -96,13 +97,15 @@ export function usePurchaseStore(userId?: string | null) {
     finally { setSaving(false); }
     void retrySync();
   }, [publish, retrySync]);
-  const upsert = useCallback((purchase: Purchase) => change(s => ({ ...s,
-    items: s.items.some(item => item.id === purchase.id) ? s.items.map(item => item.id === purchase.id ? purchase : item) : [purchase, ...s.items],
-    pending: userId ? [...new Set([...s.pending, purchase.id])] : s.pending,
-    deleted: s.deleted.filter(id => id !== purchase.id),
-  })), [change, userId]);
-  const remove = useCallback((id: Purchase['id']) => change(s => ({ ...s, items: s.items.filter(item => item.id !== id), pending: s.pending.filter(value => value !== id), deleted: userId ? [...new Set([...s.deleted, id])] : [] })), [change, userId]);
-  const replaceAll = useCallback((next: Purchase[]) => change(s => ({ version: 2, items: next, pending: userId ? next.map(item => item.id) : [], deleted: userId ? [...new Set([...s.deleted, ...s.items.filter(item => !next.some(n => n.id === item.id)).map(item => item.id)])] : [] })), [change, userId]);
-  const restoreSamples = useCallback(() => change(s => ({ ...s, items: [...s.items, ...demoPurchases.filter(demo => !s.items.some(item => item.id === demo.id))] })), [change]);
-  return { items, hydrated, saving, storageError, syncStatus, syncError, upsert, remove, replaceAll, restoreSamples, retrySync };
+  const signedIn = Boolean(userId);
+  const upsert = useCallback((purchase: Purchase) => change(s => upsertItem(s, purchase, signedIn)), [change, signedIn]);
+  const remove = useCallback((id: Purchase['id']) => change(s => removeItem(s, id, signedIn)), [change, signedIn]);
+  const replaceAll = useCallback((next: Purchase[]) => change(s => replaceItems(s, next, signedIn)), [change, signedIn]);
+  const restoreSamples = useCallback(() => change(s => upsertEach(s, demoPurchases.filter(demo => !s.items.some(item => item.id === demo.id)), signedIn)), [change, signedIn]);
+  return { items, hydrated, saving, storageError, syncStatus, syncError, online, upsert, remove, replaceAll, restoreSamples, retrySync };
+}
+
+/** Appends missing sample records without touching existing ones or queueing unchanged rows. */
+function upsertEach(snapshot: Snapshot, additions: Purchase[], signedIn: boolean): Snapshot {
+  return additions.reduce<Snapshot>((current, purchase) => upsertItem(current, purchase, signedIn), snapshot);
 }

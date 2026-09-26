@@ -32,8 +32,9 @@ export default function App() {
   const { settings, update: persistSettings, hydrated: settingsReady, error: settingsError } = useAppSettings();
   const updateSettings = async (patch: Parameters<typeof persistSettings>[0]) => { await persistSettings(patch); };
   const dismissSample = () => { updateSettings({ sampleBannerDismissed: true }).catch(() => notify('Settings could not be saved.', 'danger')); };
-  const [, tick] = useState(0);
-  useEffect(() => { const timer = setInterval(() => tick(value => value + 1), 60000); return () => clearInterval(timer); }, []);
+  // Re-derive date-sensitive state (protections, day counts) at least once a minute.
+  const [clockTick, setClockTick] = useState(0);
+  useEffect(() => { const timer = setInterval(() => setClockTick(value => value + 1), 60000); return () => clearInterval(timer); }, []);
   const [tab, setTab] = useState<Tab>('Home');
   const [selectedId, setSelectedId] = useState<Purchase['id'] | null>(null);
   const [flowOpen, setFlowOpen] = useState(false);
@@ -50,7 +51,7 @@ export default function App() {
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
   useEffect(() => { if (store.storageError) notify('Device storage is unavailable — changes may not persist between sessions.', 'danger'); }, [store.storageError]);
 
-  const items = store.items.map(item => ({ ...item, protectionStatus: deriveProtection(item) }));
+  const items = useMemo(() => store.items.map(item => ({ ...item, protectionStatus: deriveProtection(item) })), [store.items, clockTick]);
   const selected = useMemo(() => items.find((item) => item.id === selectedId) ?? null, [items, selectedId]);
   const deadlines = useMemo(() => normalizedDeadlines(items), [items]);
   const urgentCount = useMemo(() => urgentDeadlines(items).length, [items]);
@@ -123,14 +124,14 @@ export default function App() {
               <>
                 {store.storageError || settingsError ? <View style={{ marginBottom: spacing.lg }}><Banner tone="danger" icon="alert-circle" title="Device storage needs attention" message={store.storageError ?? settingsError!} /></View> : null}
                 <View style={styles.statusStrip}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 }}><Feather name={store.syncStatus === 'error' ? 'cloud-off' : session.user ? 'cloud' : 'hard-drive'} size={14} color={colors.muted} /><Text style={type.caption}>{store.saving ? 'Saving to device…' : store.syncStatus === 'syncing' ? 'Synchronizing purchase records…' : store.syncStatus === 'error' ? 'Saved on device · cloud sync needs attention' : store.syncStatus === 'synced' ? 'Cloud checked · no pending uploads · files stay on device' : 'Device storage · cloud sync is not connected'}</Text></View>
-                  {store.syncStatus === 'error' ? <Button size="sm" variant="ghost" label="Retry sync" onPress={() => { void store.retrySync(); }} /> : null}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 }}><Feather name={store.syncStatus === 'error' || (session.user && !store.online) ? 'cloud-off' : session.user ? 'cloud' : 'hard-drive'} size={14} color={colors.muted} /><Text style={type.caption}>{store.saving ? 'Saving to device…' : session.user && !store.online ? 'Offline · saved on this device · sync resumes when you reconnect' : !session.user ? (store.syncStatus === 'syncing' ? 'Synchronizing purchase records…' : 'Device storage · cloud sync is not connected') : store.syncStatus === 'syncing' ? 'Synchronizing purchase records…' : store.syncStatus === 'error' ? 'Saved on device · cloud sync needs attention' : store.syncStatus === 'synced' ? 'Cloud checked · no pending uploads · files stay on device' : 'Device storage · cloud sync is not connected'}</Text></View>
+                  {store.syncStatus === 'error' && store.online ? <Button size="sm" variant="ghost" label="Retry sync" onPress={() => { void store.retrySync(); }} /> : null}
                 </View>
                 {tab === 'Home' ? <Dashboard items={items} isPhone={viewport.isPhone} userEmail={userEmail} sampleVisible={sampleVisible} aiConfigured={aiConfigured} onAdd={openAddFlow} onOpen={openPurchase} onPurchases={() => setTab('Purchases')} onDeadlines={() => setTab('Deadlines')} onVault={() => setTab('Vault')} onDismissSample={dismissSample} onClearSamples={() => { void clearRecords(true); }} onRestoreSamples={restoreSamples} /> : null}
                 {tab === 'Purchases' ? <PurchasesScreen items={filtered} total={items.length} query={query} onAdd={openAddFlow} onOpen={openPurchase} /> : null}
                 {tab === 'Deadlines' ? <DeadlineRadar onUpdate={updatePurchase} deadlines={deadlines} onOpenPurchase={openPurchase} onAdd={openAddFlow} /> : null}
                 {tab === 'Vault' ? <VaultScreen items={items} onAdd={openAddFlow} onOpenPurchase={openPurchase} onUpdatePurchase={updatePurchase} /> : null}
-                {tab === 'Settings' ? <SettingsScreen items={items} settings={settings} updateSettings={updateSettings} userEmail={userEmail} configured={session.configured} syncStatus={store.syncStatus} syncError={store.syncError} onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))} onRestoreSamples={restoreSamples} onDeleteAll={() => { void clearRecords(); }} onNotify={notify} /> : null}
+                {tab === 'Settings' ? <SettingsScreen items={items} settings={settings} updateSettings={updateSettings} userEmail={userEmail} configured={session.configured} syncStatus={store.syncStatus} syncError={store.syncError} online={store.online} onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))} onRestoreSamples={restoreSamples} onDeleteAll={() => { void clearRecords(); }} onNotify={notify} /> : null}
               </>
             )}
           </ScrollView>

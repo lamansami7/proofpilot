@@ -1,10 +1,24 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { colors, radius, shadows, spacing, type } from '../design/tokens';
+import { colors, shadows, spacing, type } from '../design/tokens';
 import { Banner, Button, Card, Input } from './ui';
 
 export type AuthResult = void | { info?: string };
+
+/** Maps provider errors to plain language without inventing causes. */
+export function friendlyAuthError(message: string): string {
+  const text = message || '';
+  if (!text.trim()) return 'We could not continue. Check your connection and try again.';
+  if (/invalid login credentials/i.test(text)) return 'Email or password is incorrect. Check them and try again.';
+  if (/email not confirmed/i.test(text)) return 'Confirm your email first — open the confirmation link we sent, then sign in.';
+  if (/already registered/i.test(text)) return 'An account with this email already exists. Sign in instead, or use a different email.';
+  if (/password.*(6|8)/i.test(text) || /at least/i.test(text)) return 'Password does not meet the minimum length. Use at least 8 characters.';
+  if (/rate|too many|429/i.test(text)) return 'Too many attempts. Wait a moment before trying again.';
+  if (/network|fetch|failed to|timed? ?out/i.test(text)) return 'We could not reach the sign-in service. Check your connection and try again.';
+  if (/signup|sign.?up.*disabled/i.test(text)) return 'New account creation is disabled on this server.';
+  return text.length <= 160 ? text : 'We could not continue. Check your connection and try again.';
+}
 
 export function AuthScreen({ onSubmit }: { onSubmit: (email: string, password: string, signUp: boolean) => Promise<AuthResult> }) {
   const [email, setEmail] = useState('');
@@ -26,7 +40,7 @@ export function AuthScreen({ onSubmit }: { onSubmit: (email: string, password: s
       const result = await onSubmit(email.trim(), password, signUp);
       if (result && result.info) setInfo(result.info);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not continue. Check your connection and try again.');
+      setError(friendlyAuthError(e instanceof Error ? e.message : ''));
     } finally {
       setLoading(false);
     }

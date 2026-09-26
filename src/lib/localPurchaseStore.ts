@@ -2,6 +2,13 @@ import { migratePurchases } from './purchaseMigration';
 import type { Purchase } from '../types/purchase';
 
 export type Snapshot = { version: 2; items: Purchase[]; pending: Array<Purchase['id']>; deleted: Array<Purchase['id']> };
+export const PURCHASE_STORAGE_KEY = 'proofpilot.v1.purchases';
+
+/** Signed-in accounts get an isolated storage slot; signed-out devices share the local slot. */
+export function storageKeyFor(userId?: string | null): string {
+  return userId ? `${PURCHASE_STORAGE_KEY}.account.${userId}` : PURCHASE_STORAGE_KEY;
+}
+
 export const snapshotFor = (items: Purchase[] = []): Snapshot => ({ version: 2, items, pending: [], deleted: [] });
 export function readSnapshot(raw: string | null): Snapshot {
   if (!raw) return snapshotFor();
@@ -38,4 +45,39 @@ export class LocalPurchaseStore {
     this.queue = operation.catch(() => undefined);
     return operation;
   }
+}
+
+/** Insert-or-replace by id. Repeating the same save never duplicates a record. */
+export function upsertItem(snapshot: Snapshot, purchase: Purchase, signedIn: boolean): Snapshot {
+  const exists = snapshot.items.some((item) => item.id === purchase.id);
+  return {
+    ...snapshot,
+    items: exists ? snapshot.items.map((item) => (item.id === purchase.id ? purchase : item)) : [purchase, ...snapshot.items],
+    pending: signedIn ? [...new Set([...snapshot.pending, purchase.id])] : snapshot.pending,
+    deleted: snapshot.deleted.filter((id) => id !== purchase.id),
+  };
+}
+
+/** Removing an unsaved record must not create a cloud tombstone for it. */
+export function removeItem(snapshot: Snapshot, id: Purchase['id'], signedIn: boolean): Snapshot {
+  const existed = snapshot.items.some((item) => item.id === id);
+  return {
+    ...snapshot,
+    items: snapshot.items.filter((item) => item.id !== id),
+    pending: snapshot.pending.filter((value) => value !== id),
+    deleted: signedIn && existed ? [...new Set([...snapshot.deleted, id])] : snapshot.deleted.filter((value) => value !== id),
+  };
+}
+
+/** Bulk replace (clear/restore samples): queue uploads for kept records, tombstone removed ones. */
+export function replaceItems(snapshot: Snapshot, next: Purchase[], signedIn: boolean): Snapshot {
+  const kept = new Set(next.map((item) => item.id));
+  const tombstones = new Set([...(signedIn ? snapshot.deleted : []), ...snapshot.items.filter((item) => !kept.has(item.id)).map((item) => item.id)]);
+  kept.forEach((id) => tombstones.delete(id));
+  return {
+    version: 2,
+    items: next,
+    pending: signedIn ? next.map((item) => item.id) : [],
+    deleted: signedIn ? [...tombstones] : [],
+  };
 }

@@ -43,6 +43,7 @@ export function migratePurchase(value: unknown, index = 0): Purchase | null {
     icon: text(row.icon, 'package') as FeatherIconName, tint: text(row.tint, '#E7EDFF'),
     protectionStatus: deriveProtection({ returnDeadline, warrantyEnd, hasReceipt }),
     warrantyEnd, warrantyProvider: nullableText(row.warrantyProvider), returnDeadline,
+    pinned: row.pinned === true,
     serial: nullableText(row.serial), model: nullableText(row.model), hasReceipt,
     hasWarrantyInfo: Boolean(warrantyEnd || nullableText(row.warrantyProvider)), notes: nullableText(row.notes), documents,
     deadlines,

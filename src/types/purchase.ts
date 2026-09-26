@@ -38,6 +38,8 @@ export type Purchase = {
   icon: FeatherIconName;
   tint: string;
   protectionStatus: ProtectionStatus;
+  /** User pins stay local to the record and float the purchase to the top of lists. */
+  pinned?: boolean;
   warrantyEnd: string | null;
   warrantyProvider: string | null;
   returnDeadline: string | null;
@@ -58,4 +60,8 @@ export type ActionNeeded = {
   description: string;
   actionLabel: string;
   date?: string;
+  /** Present for deadline actions so lists can prioritize and sort accurately. */
+  deadlineType?: DeadlineType;
+  /** Whole days until the deadline (negative when past). */
+  days?: number;
 };
