@@ -8,30 +8,41 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "test": "jest --runInBand",
-    "build:web": "expo export --platform web",
+    "build:web": "expo export --platform web && node scripts/build-offline-shell.mjs",
     "preview": "node scripts/preview.mjs",
     "typecheck": "tsc --noEmit",
     "test:migrations": "node scripts/test-migrations.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "postinstall": "patch-package --error-on-fail",
+    "test:tooling": "node scripts/test-tooling.mjs",
+    "test:edge": "deno test supabase/functions/_shared/handlers_test.ts",
+    "check:edge": "deno check supabase/functions/proofpilot-ai/index.ts supabase/functions/delete-account/index.ts",
+    "test:live": "node scripts/verify-live.mjs",
+    "check:release": "node scripts/check-release.mjs",
+    "measure:web": "node scripts/measure-web.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",
-    "@expo/vector-icons": "^14.0.4",
-    "@react-native-async-storage/async-storage": "^2.1.0",
+    "@expo/vector-icons": "~14.0.4",
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-community/netinfo": "11.4.1",
     "@supabase/supabase-js": "^2.49.1",
     "expo": "~52.0.0",
     "expo-document-picker": "~13.0.1",
     "expo-file-system": "~18.0.4",
+    "expo-font": "~13.0.4",
     "expo-image-picker": "~16.0.3",
-    "expo-notifications": "~0.29.14",
     "expo-secure-store": "~14.0.1",
+    "expo-sharing": "~13.0.1",
     "expo-status-bar": "~2.0.1",
+    "expo-system-ui": "~4.0.9",
     "react": "18.3.1",
-    "react-native": "0.76.5",
+    "react-native": "0.76.9",
     "react-native-safe-area-context": "4.12.0",
     "react-native-web": "~0.19.13"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@babel/core": "^7.25.2",
     "@electric-sql/pglite": "^0.5.8",
     "@playwright/test": "^1.63.0",
@@ -40,6 +51,7 @@
     "@types/react-native": "^0.73.0",
     "@types/react-test-renderer": "~18.3.0",
     "jest-expo": "~52.0.6",
+    "patch-package": "^8.0.1",
     "typescript": "~5.3.3"
   },
   "jest": {
@@ -54,6 +66,13 @@
   },
   "overrides": {
     "react": "18.3.1",
-    "postcss": "8.5.28"
+    "postcss": "8.5.28",
+    "tar": "7.5.22",
+    "@xmldom/xmldom": "0.9.12",
+    "image-size": "2.0.4",
+    "uuid": "11.1.1"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

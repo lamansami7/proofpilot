@@ -1,0 +1,14 @@
+diff --git a/node_modules/react-native-web/dist/exports/Modal/ModalContent.js b/node_modules/react-native-web/dist/exports/Modal/ModalContent.js
+index 172cc8b..42e78a9 100644
+--- a/node_modules/react-native-web/dist/exports/Modal/ModalContent.js
++++ b/node_modules/react-native-web/dist/exports/Modal/ModalContent.js
+@@ -39,7 +39,8 @@ var ModalContent = /*#__PURE__*/React.forwardRef((props, forwardedRef) => {
+     return [styles.modal, transparent ? styles.modalTransparent : styles.modalOpaque];
+   }, [transparent]);
+   return /*#__PURE__*/React.createElement(View, _extends({}, rest, {
+-    "aria-modal": true,
++    "aria-modal": active ? true : undefined,
++    "aria-hidden": active ? undefined : true,
+     ref: forwardedRef,
+     role: active ? 'dialog' : null,
+     style: style

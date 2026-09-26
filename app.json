@@ -3,30 +3,50 @@
     "name": "ProofPilot",
     "slug": "proofpilot",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "backgroundColor": "#f6f7f2"
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F6F7F3"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.proofpilot.app"
+      "bundleIdentifier": "com.proofpilot.app",
+      "buildNumber": "1"
     },
     "android": {
       "package": "com.proofpilot.app",
       "adaptiveIcon": {
-        "backgroundColor": "#101b2c"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#193831"
       },
       "permissions": [
         "CAMERA"
+      ],
+      "versionCode": 1,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
-      "expo-image-picker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose receipt and warranty images to attach to your purchases.",
+          "cameraPermission": "Photograph a receipt to attach it to a purchase.",
+          "microphonePermission": false
+        }
+      ],
       "expo-document-picker",
-      "expo-notifications",
       "expo-secure-store"
-    ]
+    ],
+    "scheme": "proofpilot",
+    "icon": "./assets/icon.png",
+    "web": {
+      "name": "ProofPilot",
+      "favicon": "./assets/favicon.png"
+    }
   }
 }
