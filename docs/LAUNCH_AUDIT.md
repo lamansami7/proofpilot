@@ -1,113 +1,102 @@
-# ProofPilot 1.0.0 — launch audit / hardening increment
+# FINAL LAUNCH AUDIT — ProofPilot 1.0.0
 
-Date: 2026-09-26. Baseline: `3e7b2c3682380fe749b0171f08c5d42bd23a3d39`.
-Branch: `arena/01a0dd28-proofpilot`. Public version remains **1.0.0**.
+Date: 2026-09-26. Branch: `arena/01a0dd28-proofpilot`. PR #9 remains draft and unmerged. This report supersedes the earlier hardening-increment audit. **NOT SAFE TO SHIP as a public cloud-enabled product.** No production service, SMTP, AI provider, signed store build or physical device was verified. Work is not represented as complete production transformation.
 
-## Decision: NOT READY for public launch
+## 1. Changes — FIXED
 
-This work is a prioritized security/data-integrity increment, not completion of every item in the master directive. No production service was deployed, no real customer account was created, no production migration was applied, and no store release was built. No Supabase/AI environment configuration was available. Changes are intended for review/staging before merging.
+Continued beyond the initial hardening increment: server AI/deletion handlers, service-control migration and quotas, native PKCE callback handling, durable managed-file cleanup and orphan inventory, real JSON sharing, tab-safe local transactions, native network/resume handling, public-only offline shell, keyboard/dialog accessibility, responsive layouts, original app assets, EAS profiles, compatibility patches and operator verification/release scripts. Version stays 1.0.0. No fabricated integrations or automatic sample records.
 
-The exact resulting commit is provided in the handoff; `git rev-parse HEAD` reproduces it. Changed files are available with `git show --stat HEAD` and `git show --name-only HEAD`.
+## 2. Verified evidence — VERIFIED (local scope only)
 
-## Implemented
+Clean `npm ci` applied all four patches. Real PostgreSQL-compatible PGlite migration tests, Chromium browser interactions, Deno handler tests, strict TypeScript, production web export, all-platform JS/Hermes exports and both-platform native prebuild executed. Native generation used an ignored copy of the managed project with installed dependencies and Expo SDK 52 template; no generated native directories are shipped here. These are not substitutes for hosted Supabase or device evidence.
 
-1. Empty initial storage for new users; no automatic demonstration records. Sample loading is development-only; pre-existing records remain untouched and legacy samples can still be identified/cleared.
-2. Permanent server tombstones; deletion-wins reconciliation removes stale cached records and queued stale uploads. Deletion guards cover RPC and direct-table writes. Retry after interrupted deletion does not revive an ID. Restore uses new IDs.
-3. Cloud record/tombstone pagination rather than relying on Supabase's default row cap. A sync attempt captures its account's JWT so a later account switch cannot upload the old outbox as a different user.
-4. Legacy household purchase reads disabled until an explicit sharing/consent feature exists. Document metadata re-parenting restricted to owned purchases.
-5. Native auth token persistence through Expo SecureStore, not AsyncStorage. Session restoration uses the cached session for offline UI, handles failures/timeouts, unsubscribes on unmount, and gives auth events priority over stale initialization. Sign-out checks returned provider errors. Account changes close old editors and reset navigation.
-6. Web recovery-email request and password-update UI. Email/redirect service delivery is not verified. Native recovery gives an explicit unavailable message.
-7. Schema-versioned metadata export; strict, bounded JSON restore with confirmation, duplicate/date/price checks, new IDs and removal of all imported file locations. Append is one serialized local snapshot write.
-8. Attachment size checks on native and web; supported-extension/MIME checks; native deletion restricted to generated filenames in the app document directory. This is not malware scanning or content-signature verification.
-9. Preserve record properties (including pinned state) when editing purchases.
-10. AI transport requires HTTPS and a user JWT, rejects redirects, bounds requests, keeps the timeout active while reading responses, and surfaces rate-limit failures without billable automatic retries. Default context no longer includes serial numbers/private notes. No AI backend is included or connected.
-11. Corrected unsupported privacy/connection/reminder claims and public-support export advice. Account deletion is explicitly unavailable in Settings. Added a technical privacy draft and dependency review.
-12. Targeted PostCSS patch override, PostgreSQL migration harness, authentication/backup/document/deletion/AI transport regression tests, and seven-width browser smoke-test scaffolding.
+## 3. Test counts — VERIFIED
 
-## Verification performed
+| Check | Latest result |
+|---|---|
+| Full Jest | 248 tests, 20 suites passed |
+| Embedded PostgreSQL/RLS | 26 assertions passed |
+| Deno handler tests | 11 passed |
+| Deno production entrypoint checks | Both passed |
+| Tooling compatibility | 5 checks passed |
+| Playwright Chromium | 19 passed |
+| TypeScript incl. unused locals/parameters | Passed |
+| Web production export + offline shell | Passed |
+| iOS/Android bundle export and project prebuild | Passed; not compiled/signed |
+| Clean install / npm audit | Passed / 0 reported vulnerabilities |
+| git diff whitespace check | Passed |
+| Live staging script | Refused without credentials/opt-in; NOT a live pass |
+| Release gate | Correctly blocked missing configuration/approvals |
 
-| Check | Result |
-| --- | --- |
-| Baseline Jest | 191 tests passed |
-| Current Jest | 228 tests / 16 suites passed |
-| PostgreSQL migration harness | 13 assertions passed |
-| `tsc --noEmit` | Passed |
-| `tsc --noEmit --noUnusedLocals --noUnusedParameters` | Passed |
-| `expo export --platform web` | Passed; approximately 1.31 MB uncompressed JS plus font assets |
-| `git diff --check` | Passed |
-| npm audit | 19 findings: 13 moderate, 5 high, 1 critical (baseline 20) |
-| Playwright | **Blocked / 7 launch failures**: Chromium download failed with network ECONNRESET; no browser assertions executed |
-| Manual visual, keyboard, screen reader, Chromebook | **Not performed** |
-| Native release / real device / secure token persistence | **Not performed** |
-| Live Supabase, email, cross-device concurrency, Storage | **Not performed** |
-| Real AI provider | **Not connected** |
+## 4. Security — FIXED; hosted validation REQUIRES EXTERNAL SERVICE
 
-The SQL harness is real embedded PostgreSQL (PGlite), with minimal test Auth/Storage schemas and roles. It applies all migrations, omitting only unavailable `pgcrypto` extension registration (`gen_random_uuid()` is built in). It verifies A/B read/write isolation, idempotency, tombstone visibility/permissions, stale resurrection rejection and account cascading. It does **not** run Supabase Auth/Storage services, production default grants, email delivery, multiple concurrent database connections or a production RLS penetration test.
+RLS isolation, deletion-wins tombstones, account-bound sync credentials, native SecureStore auth persistence, exact PKCE callback parsing, bounded restore/file inputs, conservative original-file protections, strict server identity checks, redacted backend errors and private server keys. File cleanup now fails closed on corrupt caches. No provider secret embedded in client. Local records are not encrypted by the app. Browser sessions and local records remain exposed to a compromised/shared browser profile. No independent penetration test, malware scan, historical secret audit or compliance certification performed.
 
-Source searches for TODO/FIXME/mock/demo/placeholder/fake/example/hardcoded/console.log found test doubles/fixtures, form hints, legacy sample handling, and preview/test command logging. No fabricated AI fallback was found. Targeted secret-pattern scanning found no provider keys/private-key blocks in tracked source; this is not a full historical secret scan. No credentials were requested or stored. Product render tests are not visual accessibility certification.
+## 5. Database — VERIFIED locally; REQUIRES MY CONFIGURATION
 
-## Launch blockers / remaining risks
+Four ordered migrations include read-only categories, account-closing write freeze, Storage prefix controls, purchase-data validation and atomic quota reservation. Embedded harness covers ownership/RLS, idempotency, tombstones and malformed writes; it uses minimal Auth/Storage schemas, not real hosted services or concurrent DB sessions. Apply migrations before clients. Real two-account verification and two-device conflict tests remain mandatory.
 
-### Security, accounts and data integrity
+## 6. Authentication and deletion — REQUIRES EXTERNAL SERVICE; failure recovery NOT SAFE TO SHIP
 
-- Configure a **staging** Supabase project, apply all three migrations, verify actual RLS grants for anon/A/B on every owner table and Storage path, then test production configuration separately.
-- Verify email signup/confirmation, invalid credentials, expired/revoked sessions, recovery redirect and real SMTP delivery. Set real allowed redirect URLs and email rate limits. Native recovery/deep links are missing.
-- Implement verified self-service account deletion: auth user, database rows/tombstones, storage files, current-device records/token/cache cleanup; decide offline-device behavior. Current delete-all only removes purchase records/queues cloud deletes. Sign-out retains account-scoped data locally.
-- Multi-device concurrent edits still use last successful write, without optimistic revisions/conflict UI. Permanent deletion intentionally discards queued stale edits. Historical remote deletions before tombstones cannot be reconstructed. Paginated reads are not a transactional multi-page snapshot; re-sync is needed during concurrent churn.
-- Native reconnection detection is not implemented; browser online events and explicit retry exist. Automatic backoff/background synchronization is not implemented. Multi-tab local writes can still race; the serialized queue is per mounted store, not a cross-tab lock.
-- Legacy local migration remains tolerant and can omit malformed fields. It is not a repair/recovery tool for arbitrary corrupted storage.
-- Remaining critical/high dependency findings require a tested Expo/React Native upgrade or explicit reviewed containment. See DEPENDENCY_SECURITY.md.
+Email confirmation, web recovery, native PKCE callback validation and recent-password deletion flows implemented. SMTP, redirect allowlists and installed-app flows unverified. Deletion removes owned Storage before Auth; failed cleanup retains retry intent. Local confirmed purge retries are durable. Unconfirmed ledgers block normal UI rather than report success.
 
-### Documents
+**Remaining integrity/usability risk:** server deletion can succeed while its response or the client's confirmed-ledger write is lost. A deleted account cannot reauthenticate to retry; the app cannot independently infer success. Private support must verify server state, then the user must explicitly clear local app/site data after preserving other accounts' originals. There is no automatic verified recovery protocol for that case. Offline caches on other disconnected devices are not remotely erased. Do not enable customer account deletion until this recovery/support process is tested and approved; a durable server receipt protocol would be preferable. This is a real unresolved release issue, not a passed local test.
 
-- Binary storage is local-only. No upload integration is used; the old upload helper/private bucket foundation is not a cloud-backup service.
-- No comprehensive orphan inventory, durable failed-deletion queue, duplicate-content detection, or purchase/account-delete file cleanup. Canceling attachment flows can leave copies. Keep originals.
-- Native opening/sharing via Linking is not verified and may fail for private file URIs. Browser MIME/extension checks are not file-content scanning. File-size metadata is not consistently persisted/displayed. Not all promised document lifecycle requirements are finished.
-- JSON exports include sensitive record/claim text but no binaries; native Share may not produce a reusable `.json` file on every platform. Recovery from an actual browser/device loss must be rehearsed.
+## 7. AI — FIXED backend implementation; REQUIRES EXTERNAL SERVICE
 
-### AI, OCR, reminders
+Optional Edge Function authenticates JWT with Auth, validates minimized context, reserves quotas (3/min, 20/day/account, 200/day deployment), bounds upstream work and propagates cancellation/timeouts. Disabled by default. Server-only provider key/model/billing and retention review required. Eleven handler tests include AI and deletion paths but use injected dependencies, not a live provider. Outputs remain unverified; no OCR or automatic claim submission.
 
-- **AI backend is absent.** Required architecture: client JWT → authenticated operator backend/Edge Function → provider secret. Must implement server-side schema validation, persistent quotas, abuse protection, bounded output, provider budget limits, cancellation/timeouts and redacted logs. Client limits alone are not abuse protection. Keep endpoint blank until tested. No automatic retries.
-- Optional AI context still includes document names/model/merchant; review minimization and provide actual provider disclosure/consent. No document bodies are sent. User-entered questions can themselves contain sensitive data.
-- OCR/receipt extraction is unavailable. Attaching a receipt does not scan/extract it.
-- Notifications are unavailable despite the installed Expo plugin. Deadline Radar does not send reminders. Native scheduling/permission/rescheduling/timezone tests and web notification architecture remain undone.
+## 8. Browser and design — VERIFIED Chromium subset
 
-### UX, accessibility, stores and legal
+19 tests cover seven widths: 320/375/430/768/1024/1280/1440; real create/pin/edit/reload/delete, five main screens, nested dialogs, real IndexedDB file attachment/preview/export/delete/restore, concurrent two-tab saves, arrow-key navigation and offline reload. Automated screenshots and axe scans captured. Manual review of main-screen contact sheets at 320/768/1440 and earlier full Home/Settings narrow screenshots found and fixed squeezed headings and overflowing sort controls; heading dimensions now have regression assertions. This is not exhaustive manual review of every scrolled section/auth/error state. Firefox, Safari, actual Chromebook, zoom/large text and deployed-origin service-worker update behavior remain unverified.
 
-- Complete manual testing of all major screens at every requested width, actual keyboard/tab order, nested dialog focus containment/Escape, screen readers, errors, reduced motion, 44px targets and contrast. Browser tests are not yet run; they only cover basic empty navigation, not complete purchase flows.
-- No measured startup timing or large-data stress benchmark. List pagination exists; virtualization needs measurement. The web export includes many icon-font assets; no performance claim is made.
-- No Android/iOS release artifacts, signing, EAS project/build config, icon/splash artwork, versionCode/buildNumber, store screenshots, content rating or privacy/data-safety declarations verified. Existing bundle/package identifiers are `com.proofpilot.app`; ownership/availability must be checked.
-- Privacy draft requires real operator/contact/retention/regions/provider decisions and legal review. No final terms of service or private support channel. No monetization implemented.
-- No deployed production observability. Add redacted request IDs/error categories without record contents, tokens or documents; define operational response and restore drills.
+## 9. Mobile/native — REQUIRES REAL-DEVICE TESTING
 
-## Commands: local and build
+Original icon/adaptive/splash/favicon included. Android and iOS project generation and Hermes exports passed. No APK/IPA was compiled, signed, installed or run. Test camera/gallery/document picker, permissions, SecureStore, network transitions, lifecycle, recovery deep links, sharing/temporary-file deletion, orientation, safe areas, large text and VoiceOver/TalkBack. Generated Android permissions need release review, including inherited storage/overlay/vibration permissions. Old Expo SDK eligibility is not proven.
 
-```bash
-npm ci
-cp .env.example .env
-# Set only the public project URL/key, or leave empty for local-only operation.
-npm start
-npm test -- --runInBand
-npm run test:migrations
-./node_modules/.bin/tsc --noEmit
-./node_modules/.bin/tsc --noEmit --noUnusedLocals --noUnusedParameters
-npx expo export --platform web
-npm run preview
-# Requires a successfully installed browser, and a LOCAL-ONLY web export:
-npx playwright install chromium
-npm run test:e2e
-npm audit
-git diff --check
-```
+## 10. Performance — VERIFIED limited measurement
 
-## Deployment sequence (gated; not executed)
+Observed web export approximately 911 kB uncompressed JS plus 56.2 kB font, versus earlier approximately 1.31 MB JS with broader font loading. Five fresh local Chromium contexts measured app startup 204–228 ms, median 213 ms (pre-final layout edits). Local static server/headless browser only: not Core Web Vitals, slow-network, large-account or device benchmarks. No remote performance claims.
 
-1. Create staging Supabase through the operator's authenticated console; enable strong Auth settings and controlled email delivery. Never add a service-role key to Expo configuration.
-2. With the Supabase CLI installed/authenticated outside chat, use `supabase init` (this checkout does not yet include CLI config), `supabase link --project-ref YOUR_STAGING_PROJECT_REF`, then `supabase db push --dry-run`. Inspect migration history. Back up any existing database. Run `supabase db push` only against the explicitly confirmed target.
-3. Required migrations in order: `202609230001_initial_schema.sql`, `202609250001_atomic_purchase_records.sql`, `202609260001_deletion_integrity.sql`. Existing projects apply only missing migrations. Do not re-run initial schema SQL manually over live tables. Migration 3 must precede the new client. Historical shared-household data needs owner review before its access is restricted.
-4. Run the live two-user test plan above, including RLS on all tables/storage; interrupt saves/deletes; edit/delete offline on separate devices; switch accounts during sync; reconnect and verify deletion wins. Verify schema limits match client data and no file URI is uploaded. Exercise >1,000 records, local quota failures and backup/restore.
-5. Complete account deletion/file lifecycle/security blockers. Publish a finalized privacy policy and private support contact. Deploy/test AI only if enabled; otherwise keep its variable empty. Do not claim reminders/OCR.
-6. Set the three documented `EXPO_PUBLIC_*` values as appropriate in the hosting build environment; run `npm ci`, checks and `npx expo export --platform web`. Host only `dist/` over HTTPS on the chosen static host. The host is not selected/configured here; therefore exact provider-specific deployment commands cannot honestly be supplied. Add appropriate security/cache headers and review third-party connections/CSP against the actual build.
-7. Add the exact HTTPS app origin to Supabase Site URL/redirect allowlist. Test signup/recovery on that real origin, logout/session expiration, two accounts and cold restart. Use staging first; review backups/migration order before repeating on production.
-8. For native publishing, configure the actual EAS project/owner and release profiles, validate identifiers/permissions/privacy manifests/icons, then use authenticated EAS release builds and real-device QA. Do not submit a dev-server build. No exact signing/store-submit command is provided without that configuration.
-9. Perform accessibility/responsive and performance tests, audit deployed security headers/provider logging/retention, and conduct a restore/deletion drill. Obtain an explicit launch decision from the owner. **Do not merge or publish merely because unit tests pass.**
+## 11. Accessibility — FIXED / VERIFIED automated subset
+
+Keyboard tab navigation, Escape/focus return, modal containment, nested-modal ARIA patch, labeled controls, reduced motion and contrast corrections. Populated main screens and nested preview have zero violations under the configured axe WCAG 2 A/AA and 2.1 AA tags in tested flows. Automated axe does not establish WCAG conformance. Screen reader and real-device large-font review REQUIRES REAL-DEVICE TESTING.
+
+## 12. Dependencies — VERIFIED audit; release compatibility REQUIRES REAL-DEVICE TESTING
+
+Clean install audited 1,141 packages with zero reported vulnerabilities; four explicit adapters applied. No force-fix. See DEPENDENCY_SECURITY.md for pinned versions and patch rationale. Native prebuild validates only generation, not runtime/store acceptance. Current store SDK/API rules and supported Expo upgrade planning remain open.
+
+## 13. Privacy/legal — REQUIRES MY CONFIGURATION
+
+Technical disclosure updated with metadata-only backup, local attachment retention, cleanup, AI limits and account-deletion uncertainty. Configurable HTTPS privacy link/private support email; unavailable state otherwise. Operator identity/contact, lawful disclosures, regions, retention/backup erasure, provider terms, independent web deletion route, legal approval and operational support are not supplied. Draft must not be published as final policy.
+
+## 14. Store release — REQUIRES MY CONFIGURATION / REQUIRES REAL-DEVICE TESTING
+
+EAS preview/production profiles and native build identifiers prepared. Actual EAS project/signing credentials, package ownership, current target API/Apple SDK compatibility, reviewed permissions, release screenshots/feature graphic, store metadata, privacy/Data Safety declarations and store review remain outstanding. No submission performed.
+
+## 15. Exact remaining blockers
+
+| Blocker | Classification |
+|---|---|
+| Hosted project, migrations, Auth/SMTP redirects and monitoring | REQUIRES MY CONFIGURATION |
+| Live RLS/Storage, multi-device conflicts, email and deletion tests | REQUIRES EXTERNAL SERVICE |
+| Lost deletion response/confirmation-ledger recovery and other-device cache expectations | NOT SAFE TO SHIP |
+| AI provider deployment/billing/retention and real failure tests | REQUIRES EXTERNAL SERVICE |
+| EAS project, signing/accounts, policy/support and store declarations | REQUIRES MY CONFIGURATION |
+| Native runtime, permissions, lifecycle, assistive technology | REQUIRES REAL-DEVICE TESTING |
+| Store target/API/SDK compatibility and signed acceptance | REQUIRES MY CONFIGURATION |
+| Full cross-browser/scrolled-state design review, deployed SW lifecycle and independent security review | NOT SAFE TO SHIP until release review closes coverage gaps |
+
+Features absent by design, not falsely promised: notifications, OCR, document-binary cloud backup, payments. Keep independent originals; metadata exports do not restore attachment contents.
+
+## 16. Exact commands operator runs
+
+See [OPERATOR_RUNBOOK.md](../OPERATOR_RUNBOOK.md): reproducible tests; Supabase login/link/migration dry run/push; function secret/deploy commands; `npm run test:live`; EAS initialization/preview/production builds; `npm run check:release`. The runbook supplies the manual live failure-injection and two-device matrix. Never apply migrations blindly to production or bypass approvals merely to make a gate green.
+
+## 17. Exact configuration and credentials required
+
+Public build variables: EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY, EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED, optional EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT, EXPO_PUBLIC_PRIVACY_POLICY_URL, EXPO_PUBLIC_SUPPORT_EMAIL. Server-only: ALLOWED_ORIGINS, AI_ENABLED, AI_MODEL, OPENAI_API_KEY; hosted Supabase injects service URL/role key. Operator tooling: Supabase project ref/access/database credentials, SMTP sender credentials, two dedicated staging account emails/passwords, Expo/EAS ownership/login, Android keystore/Play Console and Apple signing/App Store Connect access. Required legal/operational facts and exact environment names are in the runbook. Configure privately; do not paste secrets into chat.
+
+## 18. Is PR #9 safely mergeable?
+
+**Not approved as a production-launch merge. Keep draft/unmerged.** Local-only review/staging work has substantial passing evidence, but hosted migrations/services, uncertain deletion recovery, native/store compatibility and legal/support gates remain. A maintainer could separately approve a staging-only merge after reviewing the complete patch and deployment dependencies; that is not this audit's authorization. No merge or store submission was performed. Obtain live/device evidence and resolve the listed unsafe paths before a production-readiness claim.
