@@ -145,7 +145,7 @@ export function DeadlineRadar({
           onChangeText={setQuery}
           placeholder="Search product, merchant, or deadline type"
         />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="Filter deadlines by type" contentContainerStyle={styles.filterRow}>
           {filters.map(([value, label]) => (
             <Chip key={value} label={label} selected={filter === value} onPress={() => setFilter(value)} />
           ))}

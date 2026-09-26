@@ -264,7 +264,7 @@ export default function App() {
 
                 {/* Breadcrumb & sync status */}
                 <View style={styles.statusStrip}>
-                  <Text numberOfLines={1} style={[type.caption, { flex: 1 }]}>
+                  <Text accessibilityLabel={`Location: ${breadcrumb}`} numberOfLines={1} ellipsizeMode="tail" style={[type.caption, { flex: 1 }]}>
                     {breadcrumb}
                   </Text>
                   <View style={styles.syncPill}>
@@ -360,6 +360,7 @@ export default function App() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Protect a purchase"
+          accessibilityHint="Opens the form to add a new purchase with receipts and deadlines"
           onPress={openAddFlow}
           style={interactive(styles.fab, {
             hover: { backgroundColor: colors.brandStrong },
@@ -539,6 +540,8 @@ function Topbar({
         <Feather name="search" size={17} color={colors.muted} />
         <Input
           accessibilityLabel="Search your purchases"
+          accessibilityHint="Filters the Purchases list as you type and switches to Purchases when needed"
+          returnKeyType="search"
           value={query}
           onChangeText={onSearch}
           placeholder={compact ? 'Search purchases' : 'Search purchases, merchants, serial numbers…'}
@@ -554,8 +557,8 @@ function Topbar({
           onPress={onDeadlines}
         />
         {urgentCount > 0 ? (
-          <View style={styles.bellBadge}>
-            <Text style={styles.bellBadgeText}>{urgentCount}</Text>
+          <View accessibilityLabel={`${urgentCount} urgent deadlines`} style={styles.bellBadge}>
+            <Text style={styles.bellBadgeText}>{urgentCount > 99 ? '99+' : String(urgentCount)}</Text>
           </View>
         ) : null}
       </View>
@@ -594,8 +597,8 @@ function BottomNav({ active, onSelect, urgentCount }: { active: Tab; onSelect: (
             <View style={[styles.bottomIconWrap, selectedTab && styles.bottomIconWrapActive]}>
               <Feather name={item.icon} size={19} color={selectedTab ? colors.brandDark : colors.muted} />
               {item.badge ? (
-                <View style={styles.bottomBadge}>
-                  <Text style={styles.bottomBadgeText}>{item.badge}</Text>
+                <View accessibilityLabel={`${item.badge} urgent`} style={styles.bottomBadge}>
+                  <Text style={styles.bottomBadgeText}>{item.badge > 99 ? '99+' : String(item.badge)}</Text>
                 </View>
               ) : null}
             </View>

@@ -103,7 +103,7 @@ export function VaultScreen({
 
       <View style={styles.toolbar}>
         <View style={styles.searchWrap}>
-          <Input accessibilityLabel="Search documents" value={query} onChangeText={setQuery} placeholder="Search documents, purchases, or merchants" />
+          <Input accessibilityLabel="Search documents" accessibilityHint="Filters receipts, warranty documents, product files, and claim drafts" value={query} onChangeText={setQuery} placeholder="Search documents, purchases, or merchants" />
         </View>
         <View style={styles.filterRow}>
           {[

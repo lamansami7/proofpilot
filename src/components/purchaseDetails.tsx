@@ -459,7 +459,7 @@ const styles = StyleSheet.create({
   },
   proofCard: { padding: spacing.xl, backgroundColor: colors.surface, borderColor: colors.borderSubtle, marginBottom: spacing.md, ...shadows.soft, borderLeftWidth: 3, borderLeftColor: colors.brand },
   proofHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  proofIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#DDE9CA' },
+  proofIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brandBorder },
   protectionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   protectionCard: { flex: 1, flexBasis: 260, padding: spacing.lg, minWidth: 0, ...shadows.card },
   protectionHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

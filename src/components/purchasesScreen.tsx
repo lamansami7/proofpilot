@@ -148,7 +148,7 @@ export function PurchasesScreen({
             </View>
 
             {categories.length > 1 || filters.category ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityLabel="Filter by category" contentContainerStyle={styles.categoryRow}>
                 <Chip label="All categories" selected={!filters.category} onPress={() => setFilter('category', null)} />
                 {categories.map((item) => (
                   <Chip

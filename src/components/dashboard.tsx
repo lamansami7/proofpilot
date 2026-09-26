@@ -385,12 +385,12 @@ function ProtectionOverview({
         style={styles.progressTrack}
       >
         <View style={[styles.progressSegment, { flexBasis: `${protectedPct * 100}%`, backgroundColor: colors.brandStrong }]} />
-        <View style={[styles.progressSegment, { flexBasis: `${attentionPct * 100}%`, backgroundColor: '#E4B15E' }]} />
+        <View style={[styles.progressSegment, { flexBasis: `${attentionPct * 100}%`, backgroundColor: colors.attentionSegment }]} />
         <View style={[styles.progressSegment, { flex: 1, backgroundColor: colors.borderStrong }]} />
       </View>
       <View style={[styles.overviewStats, isPhone && styles.overviewStatsPhone]}>
         <LegendDot color={colors.brandStrong} label={`${summary.protected} protected`} />
-        <LegendDot color="#E4B15E" label={`${summary.attention} need attention`} />
+        <LegendDot color={colors.attentionSegment} label={`${summary.attention} need attention`} />
         <LegendDot color={colors.borderStrong} label={`${summary.unprotected} unprotected`} />
         <View style={styles.overviewMeta}>
           <Text style={type.bodySmall}>
@@ -490,14 +490,14 @@ function Feature({ icon, title, body }: { icon: 'corner-up-left' | 'archive' | '
 const styles = StyleSheet.create({
   hero: {
     borderRadius: 24,
-    backgroundColor: '#193831',
+    backgroundColor: colors.hero,
     padding: spacing.xxl,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xl,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#25483E',
+    borderColor: colors.heroDeep,
     ...shadows.raised,
   },
   heroPhone: { padding: spacing.lg, borderRadius: 20, gap: spacing.lg },
@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 18,
-    backgroundColor: '#25483E',
+    backgroundColor: colors.heroDeep,
     padding: spacing.xl,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
@@ -526,7 +526,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2F5D4A',
+    backgroundColor: colors.heroMuted,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
   },
@@ -635,13 +635,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  assistantCard: { padding: spacing.lg, marginTop: spacing.md, backgroundColor: colors.brandSubtle, borderColor: '#DCE9CA' },
+  assistantCard: { padding: spacing.lg, marginTop: spacing.md, backgroundColor: colors.brandSubtle, borderColor: colors.brandBorder },
   assistantHead: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
   assistantIcon: {
     width: 42,
     height: 42,
     borderRadius: radius.md,
-    backgroundColor: '#DCEFC6',
+    backgroundColor: colors.brandTint,
     alignItems: 'center',
     justifyContent: 'center',
   },

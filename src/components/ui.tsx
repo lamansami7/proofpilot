@@ -98,10 +98,12 @@ export function Button({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityState={{ disabled: Boolean(disabled || loading) }}
+      accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
+      accessibilityHint={loading ? 'Loading' : undefined}
+      hitSlop={2}
       disabled={disabled || loading}
       onPress={onPress}
-      style={interactive([base, tone, disabled && { opacity: 0.5 }], { hover })}
+      style={interactive([base, tone, (disabled || loading) && { opacity: 0.5 }], { hover })}
     >
       {loading ? (
         <ActivityIndicator size="small" color={iconColor} />
@@ -143,12 +145,14 @@ export function IconButton({
     height: Math.max(size, 44),
     width: Math.max(size, 44),
     ...(tone === 'ghost' ? { borderWidth: 0, backgroundColor: 'transparent' } : null),
-    ...(tone === 'tint' ? { backgroundColor: colors.brandMuted, borderColor: colors.brandMuted } : null),
+    ...(tone === 'tint' ? { backgroundColor: colors.brandMuted, borderColor: colors.brandBorder } : null),
   };
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      hitSlop={6}
       disabled={disabled}
       onPress={onPress}
       style={interactive([base, disabled && { opacity: 0.45 }])}
@@ -318,6 +322,8 @@ export const Input = React.forwardRef<TextInput, InputProps>(function Input(prop
         <TextInput
           ref={ref}
           accessibilityLabel={inputProps.accessibilityLabel ?? label}
+          accessibilityState={error ? { disabled: false } : undefined}
+          aria-invalid={Boolean(error) as unknown as boolean}
           placeholderTextColor={colors.subtle}
           {...inputProps}
           style={[
@@ -535,10 +541,14 @@ export function Banner({
     warning: colors.warningBorder,
     success: colors.successBorder,
     danger: colors.dangerBorder,
-    brand: '#DCE9CA',
+    brand: colors.brandBorder,
   };
   return (
-    <View style={[styles.banner, { backgroundColor: surfaces[tone], borderColor: borders[tone] }]}>
+    <View
+      accessibilityRole={tone === 'danger' || tone === 'warning' ? 'alert' : undefined}
+      accessibilityLiveRegion={tone === 'danger' ? 'assertive' : undefined}
+      style={[styles.banner, { backgroundColor: surfaces[tone], borderColor: borders[tone] }]}
+    >
       <Feather name={icon} size={17} color={icons[tone]} style={{ marginTop: 1 }} />
       <View style={{ flex: 1 }}>
         <Text style={type.label}>{title}</Text>
@@ -573,7 +583,7 @@ export function EmptyState({
       <View style={[styles.stateIcon, compact ? styles.stateIconCompact : null]}>
         <Feather name={icon} size={compact ? 20 : 24} color={colors.brandDark} />
       </View>
-      <Text style={[compact ? type.heading : type.title, { textAlign: 'center', maxWidth: 440 }]}>{title}</Text>
+      <Text accessibilityRole="header" style={[compact ? type.heading : type.title, { textAlign: 'center', maxWidth: 440 }]}>{title}</Text>
       <Text style={[type.body, styles.stateMessage, { color: colors.inkSecondary, lineHeight: 21 }]}>{message}</Text>
       {(actionLabel && onAction) || (secondaryLabel && onSecondary) ? (
         <View style={styles.stateActions}>
@@ -681,7 +691,7 @@ const styles = StyleSheet.create({
   buttonSecondary: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.borderStrong },
   buttonGhost: { backgroundColor: 'transparent' },
   buttonDanger: { backgroundColor: colors.dangerSurface, borderWidth: 1, borderColor: colors.dangerBorder },
-  buttonTint: { backgroundColor: colors.brandMuted, borderWidth: 1, borderColor: '#DCE9CA' },
+  buttonTint: { backgroundColor: colors.brandMuted, borderWidth: 1, borderColor: colors.brandBorder },
   buttonText: { ...type.label, color: colors.ink },
   buttonTextSm: { fontSize: 12.5 },
   iconButton: {
@@ -718,7 +728,7 @@ const styles = StyleSheet.create({
   badgeText_danger: { color: colors.danger },
   badge_info: { backgroundColor: colors.infoSurface, borderWidth: 1, borderColor: colors.infoBorder },
   badgeText_info: { color: colors.info },
-  badge_brand: { backgroundColor: colors.brandMuted, borderWidth: 1, borderColor: '#DCE9CA' },
+  badge_brand: { backgroundColor: colors.brandMuted, borderWidth: 1, borderColor: colors.brandBorder },
   badgeText_brand: { color: colors.brandDark },
   badge_neutral: { backgroundColor: colors.surfaceMuted, borderWidth: 1, borderColor: colors.border },
   badgeText_neutral: { color: colors.inkSecondary },
@@ -860,7 +870,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#DDE9CA',
+    borderColor: colors.brandBorder,
   },
   stateIconCompact: { width: 44, height: 44, borderRadius: radius.md },
   stateMessage: { textAlign: 'center', maxWidth: 420, marginTop: 2 },
