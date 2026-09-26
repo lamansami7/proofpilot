@@ -34,6 +34,7 @@ function purchaseFromForm(form: Form, documents: PurchaseDocument[], customDeadl
   const id = existing?.id ?? `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const carriedDeadlines = customDeadlines;
   return {
+    ...existing,
     id,
     name: form.name.trim(), merchant: form.merchant.trim(), price, purchaseDate: form.purchaseDate || null,
     category: form.category.trim() || 'Other',

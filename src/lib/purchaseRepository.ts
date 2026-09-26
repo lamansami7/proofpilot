@@ -4,23 +4,38 @@ import { migratePurchase } from './purchaseMigration';
 import { supabase } from './supabase';
 
 export function cloudAvailable() { return Boolean(supabase); }
-export async function listPurchases(): Promise<Purchase[]> {
-  if (!supabase) throw new Error('Supabase is not configured.');
-  const { data, error } = await supabase.from('purchases').select('*, documents(*), warranties(*), return_windows(*), deadlines(*)').order('purchase_date', { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map((row) => mapPurchase(row as Record<string, unknown>));
+// Explicit pagination avoids silently dropping records at Supabase's default row limit.
+export async function listDeletedPurchases(client = supabase): Promise<string[]> {
+  if (!client) throw new Error('Supabase is not configured.');
+  const ids: string[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await client.from('purchase_tombstones').select('record_id').order('record_id').range(offset, offset + 499);
+    if (error) throw error;
+    ids.push(...(data ?? []).map(row => row.record_id as string));
+    if (!data || data.length < 500) return ids;
+  }
+}
+export async function listPurchases(client = supabase): Promise<Purchase[]> {
+  if (!client) throw new Error('Supabase is not configured.');
+  const records: Purchase[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await client.from('purchases').select('*, documents(*), warranties(*), return_windows(*), deadlines(*)').order('id').range(offset, offset + 499);
+    if (error) throw error;
+    records.push(...(data ?? []).map(row => mapPurchase(row as Record<string, unknown>)));
+    if (!data || data.length < 500) return records;
+  }
 }
 /** One RPC / transaction; deterministic server IDs make retries idempotent. */
-export async function savePurchase(purchase: Purchase): Promise<Purchase> {
-  if (!supabase) throw new Error('Supabase is not configured.');
+export async function savePurchase(purchase: Purchase, client = supabase): Promise<Purchase> {
+  if (!client) throw new Error('Supabase is not configured.');
   const record = { ...purchase, documents: purchase.documents.map(({ uri, ...document }) => document) };
-  const { error } = await supabase.rpc('save_purchase_record', { record });
+  const { error } = await client.rpc('save_purchase_record', { record });
   if (error) throw error;
   return purchase;
 }
-export async function deletePurchase(id: Purchase['id']) {
-  if (!supabase) throw new Error('Supabase is not configured.');
-  const { error } = await supabase.rpc('delete_purchase_record', { record_id: String(id) });
+export async function deletePurchase(id: Purchase['id'], client = supabase) {
+  if (!client) throw new Error('Supabase is not configured.');
+  const { error } = await client.rpc('delete_purchase_record', { record_id: String(id) });
   if (error) throw error;
 }
 /** Uploads to the private bucket. Consumers must use short-lived signed URLs, never public URLs. */

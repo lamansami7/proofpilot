@@ -16,14 +16,14 @@ const steps: Step[] = [
   },
   {
     icon: 'calendar',
-    title: 'Never miss an important deadline.',
-    body: 'Return windows and warranty expirations are tracked automatically and grouped by urgency in Deadline Radar.',
+    title: 'See your saved deadlines in one place.',
+    body: 'Dates you enter are grouped by urgency in Deadline Radar. Notifications are not enabled; check Radar regularly.',
     accent: '#FFF1DF',
   },
   {
     icon: 'file-text',
     title: 'Build stronger warranty and return claims.',
-    body: 'Verified facts from your records power honest, reviewable claim drafts. Nothing is sent without your approval.',
+    body: 'Saved facts from your records power reviewable claim templates. Check every fact and send the draft yourself; ProofPilot cannot submit claims.',
     accent: '#EAF0FA',
   },
 ];
@@ -70,13 +70,13 @@ export function Onboarding({
             </>
           ) : (
             <>
-              <Button variant="secondary" label="Explore sample data" onPress={onLoadSamples} />
+              {__DEV__ ? <Button variant="secondary" label="Explore sample data" onPress={onLoadSamples} /> : <Button variant="ghost" label="Skip" onPress={onDismiss} />}
               <Button label="Protect my first purchase" icon="plus" onPress={onAddPurchase} />
             </>
           )}
         </View>
 
-        {last ? (
+        {last && __DEV__ ? (
           <View style={styles.hint}>
             <Feather name="info" size={14} color={colors.muted} />
             <Text style={type.caption}>Sample data shows what ProofPilot can do. Remove it anytime without touching your own records.</Text>
@@ -86,7 +86,7 @@ export function Onboarding({
 
       <View style={styles.trust}>
         <Feather name="shield" size={14} color={colors.success} />
-        <Text style={type.caption}>Local-first. Private. Your data stays on this device until you connect an account.</Text>
+        <Text style={type.caption}>Local-first. Signed-in records sync to Supabase; document files stay on this device. Keep your originals.</Text>
       </View>
     </View>
   );

@@ -20,7 +20,7 @@ export function friendlyAuthError(message: string): string {
   return text.length <= 160 ? text : 'We could not continue. Check your connection and try again.';
 }
 
-export function AuthScreen({ onSubmit }: { onSubmit: (email: string, password: string, signUp: boolean) => Promise<AuthResult> }) {
+export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (email: string) => Promise<void>; onSubmit: (email: string, password: string, signUp: boolean) => Promise<AuthResult> }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [signUp, setSignUp] = useState(false);
@@ -32,7 +32,7 @@ export function AuthScreen({ onSubmit }: { onSubmit: (email: string, password: s
   const submit = async () => {
     const nextErrors: { email?: string; password?: string } = {};
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) nextErrors.email = 'Enter a valid email address.';
-    if (password.length < 8) nextErrors.password = 'Use at least 8 characters.';
+    if (signUp ? password.length < 8 : !password.length) nextErrors.password = signUp ? 'Use at least 8 characters.' : 'Enter your password.';
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
     setLoading(true); setError(''); setInfo('');
@@ -44,6 +44,14 @@ export function AuthScreen({ onSubmit }: { onSubmit: (email: string, password: s
     } finally {
       setLoading(false);
     }
+  };
+
+  const resetPassword = async () => {
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setFieldErrors({ email: 'Enter your email first.' }); return; }
+    setLoading(true); setError(''); setInfo('');
+    try { await onResetPassword?.(email.trim()); setInfo('If an account exists for this email, a password reset link will be sent.'); }
+    catch (e) { setError(friendlyAuthError(e instanceof Error ? e.message : '')); }
+    finally { setLoading(false); }
   };
 
   return (
@@ -65,8 +73,9 @@ export function AuthScreen({ onSubmit }: { onSubmit: (email: string, password: s
           <Input label="PASSWORD" value={password} onChangeText={(value) => { setPassword(value); setFieldErrors((current) => ({ ...current, password: undefined })); }} secureTextEntry autoComplete={signUp ? 'new-password' : 'password'} error={fieldErrors.password} hint={signUp ? 'At least 8 characters' : undefined} />
           <Button label={loading ? 'Please wait…' : signUp ? 'Create account' : 'Sign in'} onPress={submit} icon="arrow-right" loading={loading} fullWidth />
         </View>
-        <Button label={signUp ? 'I already have an account' : 'Create an account instead'} onPress={() => { setSignUp(!signUp); setError(''); setInfo(''); }} variant="ghost" fullWidth />
-        <Text style={[type.caption, { textAlign: 'center', marginTop: spacing.md }]}>Your purchase data stays yours. ProofPilot never sells or shares it.</Text>
+        {onResetPassword && !signUp ? <Button label="Forgot password?" variant="ghost" onPress={resetPassword} disabled={loading} fullWidth /> : null}
+        <Button disabled={loading} label={signUp ? 'I already have an account' : 'Create an account instead'} onPress={() => { setSignUp(!signUp); setError(''); setInfo(''); }} variant="ghost" fullWidth />
+        <Text style={[type.caption, { textAlign: 'center', marginTop: spacing.md }]}>Account and synchronized purchase data are processed by Supabase. Document files remain on this device; keep your originals.</Text>
       </Card>
     </View>
   );
@@ -81,3 +90,21 @@ const styles = StyleSheet.create({
   card: { width: '100%', maxWidth: 460, alignSelf: 'center', padding: spacing.xxl, ...shadows.raised },
   form: { gap: spacing.md, marginVertical: spacing.xl },
 });
+
+export function PasswordRecovery({ onSave }: { onSave: (password: string) => Promise<void> }) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const save = async () => {
+    if (password.length < 8) { setError('Use at least 8 characters.'); return; }
+    setBusy(true); setError('');
+    try { await onSave(password); }
+    catch { setError('Password was not changed. Retry or request a new recovery link.'); }
+    finally { setBusy(false); }
+  };
+  return <View style={styles.page}><Card style={styles.card}>
+    <Text style={type.heading}>Choose a new password</Text>
+    <Input label="NEW PASSWORD" secureTextEntry autoComplete="new-password" value={password} onChangeText={setPassword} error={error} />
+    <Button label="Save new password" onPress={save} loading={busy} />
+  </Card></View>;
+}

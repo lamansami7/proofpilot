@@ -81,3 +81,14 @@ export function replaceItems(snapshot: Snapshot, next: Purchase[], signedIn: boo
     deleted: signedIn ? [...tombstones] : [],
   };
 }
+
+/** Permanent server tombstones win over stale device edits, including queued uploads. */
+export function applyRemoteDeletions(snapshot: Snapshot, deletedIds: string[]): Snapshot {
+  const deleted = new Set(deletedIds);
+  return {
+    ...snapshot,
+    items: snapshot.items.filter(item => !deleted.has(String(item.id))),
+    pending: snapshot.pending.filter(id => !deleted.has(String(id))),
+    deleted: snapshot.deleted.filter(id => !deleted.has(String(id))),
+  };
+}

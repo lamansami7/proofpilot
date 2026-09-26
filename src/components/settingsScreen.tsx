@@ -1,3 +1,6 @@
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import { createBackup, parseBackup, prepareRestoration, MAX_BACKUP_BYTES } from '../lib/backup';
 import React, { useEffect, useState } from 'react';
 import { Linking, Platform, Share, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -21,11 +24,14 @@ type SettingsProps = {
   online: boolean;
   onSignOut: () => void;
   onRestoreSamples: () => void;
+  onRestoreBackup?: (records: Purchase[]) => Promise<void>;
   onDeleteAll: () => void;
   onNotify: (message: string, tone?: 'success' | 'danger' | 'info') => void;
 };
 
-export function SettingsScreen({ items, settings, updateSettings, userEmail, configured, syncStatus, syncError, online, onSignOut, onRestoreSamples, onDeleteAll, onNotify }: SettingsProps) {
+export function SettingsScreen({ items, settings, updateSettings, userEmail, configured, syncStatus, syncError, online, onSignOut, onRestoreSamples, onRestoreBackup, onDeleteAll, onNotify }: SettingsProps) {
+  const [restore, setRestore] = useState<Purchase[] | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const [returnDays, setReturnDays] = useState(String(settings.defaultReturnWindowDays));
   const [saving, setSaving] = useState(false);
   useEffect(() => setReturnDays(String(settings.defaultReturnWindowDays)), [settings.defaultReturnWindowDays]);
@@ -51,8 +57,30 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
     finally { setSaving(false); }
   };
 
+  const selectBackup = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'application/json', multiple: false, copyToCacheDirectory: true });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset.size || asset.size > MAX_BACKUP_BYTES) throw new Error('Choose a JSON backup up to 5 MB with a readable file size.');
+      const raw = Platform.OS === 'web' ? await (await fetch(asset.uri)).text() : await FileSystem.readAsStringAsync(asset.uri);
+      setRestore(parseBackup(raw));
+    } catch (e) { onNotify(e instanceof Error ? e.message : 'Could not read this backup. Nothing was restored.', 'danger'); }
+  };
+  const confirmRestore = async () => {
+    if (!restore || !onRestoreBackup) return;
+    setRestoring(true);
+    try {
+      const prefix = `restored-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      let index = 0;
+      await onRestoreBackup(prepareRestoration(restore, () => `${prefix}-${index++}`));
+      setRestore(null); onNotify('Backup records added. Original document files must be reattached.');
+    } catch { onNotify('Restore did not finish. Previous saved records are unchanged.', 'danger'); }
+    finally { setRestoring(false); }
+  };
+
   const exportData = async () => {
-    const payload = JSON.stringify({ exportedAt: new Date().toISOString(), app: 'ProofPilot', purchases: items }, null, 2);
+    const payload = JSON.stringify(createBackup(items), null, 2);
     try {
       if (Platform.OS === 'web' && typeof document !== 'undefined') {
         const blob = new Blob([payload], { type: 'application/json' });
@@ -113,7 +141,7 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
         </Card>
       </Section>
 
-      <Section icon="cloud" title="Cloud sync" detail={cloudAvailable() ? 'Supabase connection detected' : 'Not configured'}>
+      <Section icon="cloud" title="Cloud sync" detail={cloudAvailable() ? 'Supabase configured (not a connectivity test)' : 'Not configured'}>
         <View style={styles.syncRow}>
           <Text style={type.label}>Current status</Text>
           <Badge label={syncState} tone={syncTone} icon={syncState === 'Synced' ? 'check-circle' : syncState === 'Error' ? 'alert-circle' : syncState === 'Offline' ? 'cloud-off' : syncState === 'Syncing' ? 'refresh-cw' : 'hard-drive'} />
@@ -134,33 +162,43 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
 
       <Section icon="lock" title="Privacy & security" detail="How your data is handled">
         <Card style={styles.innerCard}>
-          <PrivacyRow text="Purchase records are stored locally on this device and are private to you." />
-          <PrivacyRow text="If cloud sync is configured, the Supabase schema enforces row-level security — only your account can read your rows." />
-          <PrivacyRow text={`AI features ${ai.isConfigured ? 'send purchase context to your configured secure endpoint. Provider keys never ship inside the app.' : 'are not connected, so no purchase data leaves this app.'}`} />
-          <PrivacyRow text="Nothing is sold, shared, or used for advertising. There are no payment or billing features in this build." />
+          <PrivacyRow text="Local purchase records are not encrypted by ProofPilot. Protect access to your device and browser profile." />
+          <PrivacyRow text="Cloud account isolation requires all documented database migrations and verified row-level security policies." />
+          <PrivacyRow text={`AI features ${ai.isConfigured ? 'send purchase context to your configured secure endpoint. Provider keys never ship inside the app.' : 'are not connected; no data is sent to an AI provider. Cloud sync, if configured, is separate.'}`} />
+          <PrivacyRow text="No advertising SDK or payment flow is implemented in this build. Cloud and optional AI services process the data you send." />
         </Card>
       </Section>
+
+      <Banner tone="warning" icon="info" title="Account deletion unavailable in this build" message="Delete all purchases is not account deletion. A verified account-deletion service and private support channel are required before public launch." />
 
       <Section icon="database" title="Data" detail={`${summary.total} purchases · ${summary.total ? 'local-first' : 'nothing stored'}`}>
         <Card style={styles.innerCard}>
           <View style={styles.dataRow}>
             <View style={{ flex: 1 }}>
               <Text style={type.label}>Export my data</Text>
-              <Text style={type.bodySmall}>Download every purchase as a JSON file.</Text>
+              <Text style={type.bodySmall}>Versioned JSON with records and claim text. No document files or device paths.</Text>
             </View>
             <Button size="sm" variant="secondary" icon="download" label="Export" onPress={exportData} disabled={items.length === 0} />
           </View>
-          <View style={styles.dataRow}>
+          {onRestoreBackup ? <View style={styles.dataRow}>
+            <View style={{ flex: 1 }}><Text style={type.label}>Restore a JSON backup</Text><Text style={type.bodySmall}>Adds new copies to the current account; never replaces records. Files are not included. Repeated restores create copies.</Text></View>
+            <Button label="Choose backup" variant="secondary" onPress={selectBackup} disabled={restoring} />
+          </View> : null}
+          {restore ? <Banner tone="warning" icon="alert-circle" title={`Add ${restore.length} purchases?`} message="These records will belong to the current account and sync if signed in. Document files must be reattached.">
+            <Button label="Cancel restore" variant="ghost" onPress={() => setRestore(null)} disabled={restoring} />
+            <Button label="Confirm restore" onPress={confirmRestore} loading={restoring} />
+          </Banner> : null}
+          {__DEV__ ? <View style={styles.dataRow}>
             <View style={{ flex: 1 }}>
               <Text style={type.label}>Restore sample data</Text>
               <Text style={type.bodySmall}>Add missing sample purchases without replacing your own records.</Text>
             </View>
             <Button size="sm" variant="secondary" icon="refresh-cw" label="Restore" onPress={onRestoreSamples} />
-          </View>
+          </View> : null}
           <View style={styles.dataRow}>
             <View style={{ flex: 1 }}>
               <Text style={type.label}>Delete all purchases</Text>
-              <Text style={type.bodySmall}>Permanently clears your record from this device.</Text>
+              <Text style={type.bodySmall}>Removes these records locally and queues cloud deletion when signed in. Does not delete your account or all stored file bytes.</Text>
             </View>
             {confirmWipe ? (
               <View style={{ flexDirection: 'row', gap: spacing.sm }}>
@@ -183,7 +221,7 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
             </View>
             <Button size="sm" variant="secondary" icon="external-link" label="Open support" onPress={() => { void openSupport(); }} />
           </View>
-          <PrivacyRow text="When you export your data (above), you can attach the JSON to a bug report — it contains only your own purchase records." />
+          <PrivacyRow text="GitHub issues are public. Never attach purchase exports, receipts, serial numbers, passwords, or other private data." />
         </Card>
       </Section>
 
@@ -196,7 +234,7 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
         </Card>
         <View style={styles.versionRow}>
           <Badge label={`ProofPilot ${APP_VERSION}`} tone="neutral" />
-          <Badge label={ai.isConfigured ? 'AI service: connected' : 'AI service: not configured'} tone={ai.isConfigured ? 'success' : 'neutral'} />
+          <Badge label={ai.isConfigured ? 'AI service: configured' : 'AI service: not configured'} tone={ai.isConfigured ? 'success' : 'neutral'} />
           <Badge label={cloudAvailable() ? 'Supabase: configured' : 'Supabase: not configured'} tone={cloudAvailable() ? 'success' : 'neutral'} />
         </View>
       </Section>

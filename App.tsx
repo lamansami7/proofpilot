@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { AuthScreen } from './src/components/authScreen';
+import { AuthScreen, PasswordRecovery } from './src/components/authScreen';
 import { Dashboard } from './src/components/dashboard';
 import { DeadlineRadar } from './src/components/deadlineRadar';
 import { PurchaseDetails } from './src/components/purchaseDetails';
@@ -88,6 +88,11 @@ export default function App() {
   const aiConfigured = useMemo(() => createAIService().isConfigured, []);
   const userEmail = session.user?.email ?? null;
 
+  // Discard account-scoped UI state when identity changes, including open drafts.
+  useEffect(() => {
+    setSelectedId(null); setEditing(null); setFlowOpen(false); setQuery(''); setTab('Home');
+  }, [session.user?.id]);
+
   const sampleVisible =
     items.some((item) => demoPurchases.some((demo) => demo.id === item.id)) && !settings.sampleBannerDismissed;
 
@@ -162,11 +167,15 @@ export default function App() {
     );
   }
 
+  if (session.error) return <SafeAreaView style={styles.app}><Banner tone="danger" icon="alert-circle" title="Session unavailable" message={session.error} /><Button label="Retry session" onPress={session.retry} /></SafeAreaView>;
+  if (session.recovery) return <SafeAreaView style={styles.app}><PasswordRecovery onSave={session.updatePassword} /></SafeAreaView>;
+
   if (session.configured && !session.user) {
     return (
       <SafeAreaView style={styles.app}>
         <StatusBar style="dark" />
         <AuthScreen
+          onResetPassword={session.resetPassword}
           onSubmit={async (email, password, signUp) => {
             const { data, error } = signUp
               ? await session.signUp(email, password)
@@ -345,6 +354,7 @@ export default function App() {
                     online={store.online}
                     onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))}
                     onRestoreSamples={restoreSamples}
+                    onRestoreBackup={store.restoreBackup}
                     onDeleteAll={() => void clearRecords()}
                     onNotify={notify}
                   />

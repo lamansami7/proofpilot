@@ -47,7 +47,7 @@ describe('Onboarding V3', () => {
     const nextButtons = renderer.root.findAll((n) => n.props.label === 'Next');
     expect(nextButtons.length).toBeGreaterThan(0);
     act(() => { (nextButtons[0].props.onPress as () => void)(); });
-    expect(hasText(renderer, 'Never miss an important deadline')).toBe(true);
+    expect(hasText(renderer, 'See your saved deadlines in one place')).toBe(true);
     act(() => {
       const btn = renderer.root.findAll((n) => n.props.label === 'Next')[0];
       (btn.props.onPress as () => void)();

@@ -119,8 +119,8 @@ export function Dashboard(props: DashboardProps) {
             message="Add a receipt or purchase details and ProofPilot will track its return window, warranty, and documents — ready the moment you need them."
             actionLabel="Protect a purchase"
             onAction={onAdd}
-            secondaryLabel="Load sample data"
-            onSecondary={onRestoreSamples}
+            secondaryLabel={__DEV__ ? "Load sample data" : undefined}
+            onSecondary={__DEV__ ? onRestoreSamples : undefined}
           />
           <Card style={styles.featureCard}>
             <Feature

@@ -1,3 +1,4 @@
+import { isOwnedDocumentUri, validateDocumentName, validateDocumentSize } from './documentValidation';
 import { deleteBrowserDocument, isBrowserDocument, readBrowserDocument, saveBrowserDocument } from './browserDocuments';
 import { Linking, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system';
@@ -5,8 +6,12 @@ import type { PurchaseDocument } from '../types/purchase';
 
 /** Copies picker/cache files into app-owned storage on native platforms. Web files are copied into IndexedDB, never temporary blob URLs. */
 export async function persistDocumentUri(uri: string, name: string): Promise<string> {
+  validateDocumentName(name);
   if (Platform.OS === 'web') return saveBrowserDocument(uri);
   if (!FileSystem.documentDirectory) throw new Error('Document storage unavailable.');
+  const info = await FileSystem.getInfoAsync(uri);
+  if (!info.exists || info.isDirectory) throw new Error('The selected file is no longer available.');
+  validateDocumentSize(info.size);
   const extension = name.includes('.') ? `.${name.split('.').pop()!.replace(/[^a-zA-Z0-9]/g, '')}` : '';
   const directory = `${FileSystem.documentDirectory}proofpilot-documents/`;
   await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
@@ -17,7 +22,7 @@ export async function persistDocumentUri(uri: string, name: string): Promise<str
 
 export async function deleteDocumentFile(document: PurchaseDocument): Promise<void> {
   if (Platform.OS === 'web' && document.uri && isBrowserDocument(document.uri)) { await deleteBrowserDocument(document.uri); return; }
-  if (Platform.OS === 'web' || !document.uri || !FileSystem.documentDirectory || !document.uri.startsWith(FileSystem.documentDirectory)) return;
+  if (Platform.OS === 'web' || !document.uri || !FileSystem.documentDirectory || !isOwnedDocumentUri(document.uri, FileSystem.documentDirectory)) return;
   await FileSystem.deleteAsync(document.uri, { idempotent: true });
 }
 
@@ -43,6 +48,7 @@ export async function openDocumentFile(document: PurchaseDocument): Promise<bool
       if (opened) opened.opener = null;
       return Boolean(opened);
     }
+    if (!isOwnedDocumentUri(document.uri, FileSystem.documentDirectory)) return false;
     const supported = await Linking.canOpenURL(document.uri);
     if (!supported) return false;
     await Linking.openURL(document.uri);

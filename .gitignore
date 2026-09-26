@@ -144,3 +144,7 @@ vite.config.ts.timestamp-*
 
 # Expo dev cache
 .expo/
+
+# Browser test artifacts
+playwright-report/
+test-results/

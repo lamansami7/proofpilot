@@ -1,3 +1,4 @@
+import { DOCUMENT_MIME_TYPES, validateDocumentSize } from './documentValidation';
 /** Files are durable across reloads, but clearing browser site data removes them. */
 const PREFIX = 'proofpilot-file:';
 function openDatabase(): Promise<IDBDatabase> {
@@ -23,7 +24,8 @@ export async function saveBrowserDocument(uri: string): Promise<string> {
   const response = await fetch(uri);
   if (!response.ok) throw new Error('File could not be read.');
   const blob = await response.blob();
-  if (!blob.size || blob.size > 20 * 1024 * 1024) throw new Error('Choose a file smaller than 20 MB.');
+  validateDocumentSize(blob.size);
+  if (!DOCUMENT_MIME_TYPES.includes(blob.type)) throw new Error('Unsupported file type. Choose a PDF or supported image.');
   const key = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   await transaction('readwrite', store => store.put(blob, key));
   return PREFIX + key;

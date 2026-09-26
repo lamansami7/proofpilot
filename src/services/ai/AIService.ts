@@ -1,3 +1,4 @@
+import { supabase } from '../../lib/supabase';
 export type ReceiptExtraction = {
   merchant: string | null; product_name: string | null; purchase_date: string | null;
   price: number | null; currency: string | null; category: string | null;
@@ -19,6 +20,50 @@ const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): 
 export function validatePurchaseAnswer(value: unknown): PurchaseAnswer { if (!value || typeof value !== 'object') throw new AIServiceError('The AI service returned an invalid response.', 'invalid_response'); const response = value as BackendAnswer; if (typeof response.answer !== 'string' || !response.answer.trim()) throw new AIServiceError('The AI service returned an invalid response.', 'invalid_response'); return { answer: response.answer.trim(), knownFacts: strings(response.knownFacts), missingInformation: strings(response.missingInformation) }; }
 export function validateClaimDraft(value: unknown): ClaimDraft { if (!value || typeof value !== 'object') throw new AIServiceError('The AI service returned an invalid response.', 'invalid_response'); const response = value as Record<string, unknown>; if (typeof response.draft !== 'string' || !response.draft.trim()) throw new AIServiceError('The AI service returned an invalid response.', 'invalid_response'); return { draft: response.draft.trim(), knownFacts: strings(response.knownFacts), missingInformation: strings(response.missingInformation) }; }
 /** Optional transport to a backend you operate. It sends no provider key; that backend must authenticate users and retain provider credentials. */
-export class SecureBackendAIService implements AIService { readonly isConfigured = true; constructor(private readonly endpoint: string) {} private unavailable(): never { throw new AIServiceError('This AI capability is not configured for this client.', 'unavailable'); } async answerPurchaseQuestion(question: string, context: PurchaseContext): Promise<PurchaseAnswer> { return this.post('/purchase-question', { question, context }, validatePurchaseAnswer); } async generateClaim(context: PurchaseContext, type: ClaimType, issue?: string): Promise<ClaimDraft> { return this.post('/claim-draft', { context, type, issue }, validateClaimDraft); } private async post<T>(path: string, body: unknown, validate: (value: unknown) => T): Promise<T> { let response: Response; const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 25000); try { response = await fetch(`${this.endpoint.replace(/\/$/, '')}${path}`, { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch { throw new AIServiceError('ProofPilot could not reach the secure AI service.', 'request_failed'); } finally { clearTimeout(timer); } if (!response.ok) throw new AIServiceError(response.status === 503 ? 'The secure AI service is temporarily unavailable.' : 'ProofPilot could not complete that request right now.', response.status === 503 ? 'unavailable' : 'request_failed'); try { return validate(await response.json()); } catch (error) { if (error instanceof AIServiceError) throw error; throw new AIServiceError('The AI service returned an invalid response.', 'invalid_response'); } } async extractReceipt(_imageUri: string): Promise<ReceiptExtraction> { return this.unavailable(); } async analyzeWarranty(_text: string): Promise<unknown> { return this.unavailable(); } async analyzeReturnPolicy(_text: string): Promise<unknown> { return this.unavailable(); } async summarizeDocument(_text: string): Promise<string> { return this.unavailable(); } }
-export function createAIService(endpoint = process.env.EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT): AIService { return endpoint ? new SecureBackendAIService(endpoint) : new UnavailableAIService(); }
+export class SecureBackendAIService implements AIService {
+  readonly isConfigured = true;
+  constructor(private readonly endpoint: string, private readonly token: () => Promise<string | null> = async () => {
+    if (!supabase) return null;
+    const { data, error } = await supabase.auth.getSession();
+    return error ? null : data.session?.access_token ?? null;
+  }) {
+    const url = new URL(endpoint);
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error('AI endpoint must be an HTTPS URL without credentials, query, or fragment.');
+  }
+  private unavailable(): never { throw new AIServiceError('This AI capability is not configured for this client.', 'unavailable'); }
+  async answerPurchaseQuestion(question: string, context: PurchaseContext): Promise<PurchaseAnswer> {
+    return this.post('/purchase-question', { question, context }, validatePurchaseAnswer);
+  }
+  async generateClaim(context: PurchaseContext, type: ClaimType, issue?: string): Promise<ClaimDraft> {
+    return this.post('/claim-draft', { context, type, issue }, validateClaimDraft);
+  }
+  private async post<T>(path: string, body: unknown, validate: (value: unknown) => T): Promise<T> {
+    const payload = JSON.stringify(body);
+    if (payload.length > 16000) throw new AIServiceError('Request is too long. Shorten your question or issue description.', 'request_failed');
+    const accessToken = await this.token();
+    if (!accessToken) throw new AIServiceError('Sign in before using AI guidance.', 'unavailable');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+    try {
+      const response = await fetch(`${this.endpoint.replace(/\/$/, '')}${path}`, {
+        method: 'POST', signal: controller.signal, redirect: 'error',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` }, body: payload,
+      });
+      if (!response.ok) throw new AIServiceError(response.status === 429 ? 'AI request limit reached. Wait before retrying.' : 'The AI service could not complete this request.', response.status === 503 ? 'unavailable' : 'request_failed');
+      // Keep the timeout active while reading the body, not just receiving headers.
+      return validate(await response.json());
+    } catch (error) {
+      if (error instanceof AIServiceError) throw error;
+      throw new AIServiceError('ProofPilot could not complete the AI request. Check your connection and retry.', 'request_failed');
+    } finally { clearTimeout(timer); }
+  }
+  async extractReceipt(_imageUri: string): Promise<ReceiptExtraction> { return this.unavailable(); }
+  async analyzeWarranty(_text: string): Promise<unknown> { return this.unavailable(); }
+  async analyzeReturnPolicy(_text: string): Promise<unknown> { return this.unavailable(); }
+  async summarizeDocument(_text: string): Promise<string> { return this.unavailable(); }
+}
+export function createAIService(endpoint = process.env.EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT): AIService {
+  if (!endpoint || !supabase) return new UnavailableAIService();
+  try { return new SecureBackendAIService(endpoint); } catch { return new UnavailableAIService(); }
+}
 export function validateReceiptExtraction(value: unknown): ReceiptExtraction { if (!value || typeof value !== 'object') throw new Error('Invalid receipt extraction'); const v = value as Record<string, unknown>; const nullable = (x: unknown) => typeof x === 'string' ? x : null; const numeric = (x: unknown) => typeof x === 'number' && Number.isFinite(x) ? x : null; const confidence = typeof v.confidence === 'number' && v.confidence >= 0 && v.confidence <= 1 ? v.confidence : 0; const returnWindow = v.possible_return_window && typeof v.possible_return_window === 'object' ? v.possible_return_window as Record<string, unknown> : null; const warranty = v.possible_warranty && typeof v.possible_warranty === 'object' ? v.possible_warranty as Record<string, unknown> : null; return { merchant: nullable(v.merchant), product_name: nullable(v.product_name), purchase_date: nullable(v.purchase_date), price: numeric(v.price), currency: nullable(v.currency), category: nullable(v.category), serial_number: nullable(v.serial_number), model_number: nullable(v.model_number), sku: nullable(v.sku), receipt_number: nullable(v.receipt_number), possible_return_window: returnWindow ? { start_date: nullable(returnWindow.start_date), end_date: nullable(returnWindow.end_date), confidence: Math.min(1, Math.max(0, Number(returnWindow.confidence) || 0)) } : null, possible_warranty: warranty ? { provider: nullable(warranty.provider), start_date: nullable(warranty.start_date), end_date: nullable(warranty.end_date), confidence: Math.min(1, Math.max(0, Number(warranty.confidence) || 0)) } : null, confidence }; }

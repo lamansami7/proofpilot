@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clientForAccount } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { demoPurchases } from '../data/demoPurchases';
-import { deletePurchase, listPurchases, savePurchase } from '../lib/purchaseRepository';
-import { LocalPurchaseStore, mergeCloud, readSnapshot, removeItem, replaceItems, snapshotFor, storageKeyFor, upsertItem, type Snapshot } from '../lib/localPurchaseStore';
+import { deletePurchase, listPurchases, listDeletedPurchases, savePurchase } from '../lib/purchaseRepository';
+import { LocalPurchaseStore, applyRemoteDeletions, mergeCloud, readSnapshot, removeItem, replaceItems, snapshotFor, storageKeyFor, upsertItem, type Snapshot } from '../lib/localPurchaseStore';
 import type { Purchase } from '../types/purchase';
 
 export type SyncStatus = 'local' | 'syncing' | 'synced' | 'error';
@@ -28,7 +29,7 @@ export function usePurchaseStore(userId?: string | null) {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(key);
-        store.snapshot = raw ? readSnapshot(raw) : snapshotFor(userId ? [] : demoPurchases);
+        store.snapshot = raw ? readSnapshot(raw) : snapshotFor();
         if (!cancelled) { engine.current = store; setItems(store.snapshot.items); setHydrated(true); }
       } catch {
         if (!cancelled) { setStorageError('Saved records could not be read. Reload to retry. Existing storage has not been overwritten.'); setHydrated(true); }
@@ -54,25 +55,33 @@ export function usePurchaseStore(userId?: string | null) {
     syncRunning.current = store; setSyncStatus('syncing'); setSyncError(null);
     const current = () => engine.current === store && account.current === owner;
     try {
+      // Fetch permanent server tombstones before uploads: deletion wins over stale offline edits.
+      const client = await clientForAccount(owner);
+      if (!current()) return;
+      const deleted = await listDeletedPurchases(client);
+      if (!current()) return;
+      await publish(store, s => applyRemoteDeletions(s, deleted));
       // Process durable tombstones first. Network failure leaves the outbox intact.
       while (current() && (store.snapshot.deleted.length || store.snapshot.pending.length)) {
         const id = store.snapshot.deleted[0];
         if (id !== undefined) {
-          await deletePurchase(id);
+          await deletePurchase(id, client);
           if (!current()) return;
           await publish(store, s => ({ ...s, deleted: s.deleted.filter(value => value !== id) }));
         } else {
           const pendingId = store.snapshot.pending[0];
           const purchase = store.snapshot.items.find(item => item.id === pendingId);
-          if (purchase) await savePurchase(purchase);
+          if (purchase) await savePurchase(purchase, client);
           if (!current()) return;
           await publish(store, s => ({ ...s, pending: s.items.find(item => item.id === pendingId) === purchase ? s.pending.filter(value => value !== pendingId) : s.pending }));
         }
       }
       if (!current()) return;
-      const cloud = await listPurchases();
+      const cloud = await listPurchases(client);
       if (!current()) return;
-      await publish(store, s => mergeCloud(s, cloud));
+      const remoteDeleted = await listDeletedPurchases(client);
+      if (!current()) return;
+      await publish(store, s => applyRemoteDeletions(mergeCloud(s, cloud), remoteDeleted));
       if (current()) setSyncStatus(store.snapshot.pending.length || store.snapshot.deleted.length ? 'error' : 'synced');
     } catch {
       if (current()) { setSyncStatus('error'); setSyncError('Cloud sync did not finish. Device records and pending changes are retained. Check your connection and database migration, then retry.'); }
@@ -101,8 +110,9 @@ export function usePurchaseStore(userId?: string | null) {
   const upsert = useCallback((purchase: Purchase) => change(s => upsertItem(s, purchase, signedIn)), [change, signedIn]);
   const remove = useCallback((id: Purchase['id']) => change(s => removeItem(s, id, signedIn)), [change, signedIn]);
   const replaceAll = useCallback((next: Purchase[]) => change(s => replaceItems(s, next, signedIn)), [change, signedIn]);
-  const restoreSamples = useCallback(() => change(s => upsertEach(s, demoPurchases.filter(demo => !s.items.some(item => item.id === demo.id)), signedIn)), [change, signedIn]);
-  return { items, hydrated, saving, storageError, syncStatus, syncError, online, upsert, remove, replaceAll, restoreSamples, retrySync };
+  const restoreBackup = useCallback((records: Purchase[]) => change(s => upsertEach(s, records, signedIn)), [change, signedIn]);
+  const restoreSamples = useCallback(() => change(s => upsertEach(s, (__DEV__ ? demoPurchases : []).filter(demo => !s.items.some(item => item.id === demo.id)), signedIn)), [change, signedIn]);
+  return { items, hydrated, saving, storageError, syncStatus, syncError, online, upsert, remove, replaceAll, restoreSamples, restoreBackup, retrySync };
 }
 
 /** Appends missing sample records without touching existing ones or queueing unchanged rows. */
