@@ -175,10 +175,10 @@ function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDe
       ) : null}
       <View style={{ height: spacing.md }} />
       <View style={styles.row}>
-        <View style={{ flex: 1 }}>
-          <Input ref={priceRef} label="PRICE — REQUIRED" value={form.price} onChangeText={(value) => update('price', value)} placeholder="0.00" prefix="$" keyboardType="decimal-pad" error={errors.price} hint={form.price && !errors.price && Number.isFinite(Number(form.price)) ? (Number(form.price) === 0 ? `Free — ${formatMoney(0)}` : formatMoney(Number(form.price))) : undefined} />
+        <View style={{ flex: 1, minWidth: 140 }}>
+          <Input ref={priceRef} label="PRICE — REQUIRED" accessibilityLabel="Purchase price" accessibilityHint="Enter 0 for free items, e.g. 0.00 shows as Free" value={form.price} onChangeText={(value) => update('price', value)} placeholder="0.00" prefix="$" keyboardType="decimal-pad" error={errors.price} hint={form.price && !errors.price && Number.isFinite(Number(form.price)) ? (Number(form.price) === 0 ? `Free — ${formatMoney(0)}` : formatMoney(Number(form.price))) : 'e.g. 49.99 · 0 is valid for gifts and warranties'} />
         </View>
-        <View style={{ flex: 1.2 }}>
+        <View style={{ flex: 1.2, minWidth: 160 }}>
           <DateField label="PURCHASE DATE — REQUIRED" value={form.purchaseDate} error={errors.purchaseDate} onChange={(value) => update('purchaseDate', value)}>
             <Chip label="Today" selected={form.purchaseDate === isoDate(new Date())} onPress={() => update('purchaseDate', isoDate(new Date()))} />
           </DateField>

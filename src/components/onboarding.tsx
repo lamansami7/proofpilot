@@ -93,12 +93,12 @@ export function Onboarding({
 }
 
 const styles = StyleSheet.create({
-  root: { gap: spacing.lg, maxWidth: 640, alignSelf: 'center', width: '100%' },
-  progress: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  root: { gap: spacing.lg, maxWidth: 640, alignSelf: 'center', width: '100%', paddingHorizontal: spacing.sm },
+  progress: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, justifyContent: 'center' },
   dot: { width: 28, height: 6, borderRadius: radius.pill, backgroundColor: colors.border },
   dotActive: { backgroundColor: colors.brandDark, width: 32 },
   dotDone: { backgroundColor: colors.brand, width: 24 },
-  card: { padding: spacing.xxl, alignItems: 'center', gap: spacing.md, borderColor: colors.borderSubtle },
+  card: { padding: spacing.xxl, alignItems: 'center', gap: spacing.md, borderColor: colors.borderSubtle, ...({ shadowColor: '#1C2A3A', shadowOpacity: 0.04, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } } as object) },
   icon: {
     width: 64,
     height: 64,
