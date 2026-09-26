@@ -23,7 +23,7 @@ function windowBadge(date: string | null): { label: string; tone: BadgeTone } {
   return { label: `${status.days} days left`, tone: 'success' };
 }
 
-export function PurchaseDetails({ purchase, onClose, onEdit, onDelete, onUpdate, onNotify }: { purchase: Purchase | null; onClose: () => void; onEdit: (purchase: Purchase) => void; onDelete: (purchase: Purchase) => void; onUpdate: (purchase: Purchase) => void; onNotify: (message: string) => void }) {
+export function PurchaseDetails({ purchase, onClose, onEdit, onDelete, onUpdate, onNotify }: { purchase: Purchase | null; onClose: () => void; onEdit: (purchase: Purchase) => void; onDelete: (purchase: Purchase) => void; onUpdate: (purchase: Purchase) => Promise<void>; onNotify: (message: string) => void }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [expanded, setExpanded] = useState<'assistant' | 'claim' | null>(null);
   const [addingDocument, setAddingDocument] = useState(false);
@@ -46,10 +46,10 @@ export function PurchaseDetails({ purchase, onClose, onEdit, onDelete, onUpdate,
         const uri = asset.uri ? await persistDocumentUri(asset.uri, asset.name) : null;
         const document: PurchaseDocument = { id: `document-${Date.now()}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, uri, addedAt: isoDate(new Date()) };
         const documents = [...purchase.documents, document];
-        onUpdate({ ...purchase, documents, hasReceipt: purchase.hasReceipt || kind === 'receipt', hasWarrantyInfo: purchase.hasWarrantyInfo || kind === 'warranty', protectionStatus: deriveProtection({ returnDeadline: purchase.returnDeadline, warrantyEnd: purchase.warrantyEnd, hasReceipt: purchase.hasReceipt || kind === 'receipt' }) });
+        await onUpdate({ ...purchase, documents, hasReceipt: purchase.hasReceipt || kind === 'receipt', hasWarrantyInfo: purchase.hasWarrantyInfo || kind === 'warranty', protectionStatus: deriveProtection({ returnDeadline: purchase.returnDeadline, warrantyEnd: purchase.warrantyEnd, hasReceipt: purchase.hasReceipt || kind === 'receipt' }) });
         onNotify(`${documentKindLabel(kind)} attached to ${purchase.name}.`);
       }
-    } catch { onNotify('That file could not be read. Try a PDF or image.'); } finally { setAddingDocument(false); }
+    } catch { onNotify('The document could not be attached or saved. Try a PDF or image under 20 MB, and check device storage.'); } finally { setAddingDocument(false); }
   };
 
   return (
@@ -77,6 +77,11 @@ export function PurchaseDetails({ purchase, onClose, onEdit, onDelete, onUpdate,
         </View>
       ) : null}
 
+      <Card style={[styles.section, { marginTop: 0, marginBottom: spacing.md, backgroundColor: colors.brandMuted }]}>
+        <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}><Feather name="file-text" size={20} color={colors.brandDark} /><Text style={type.heading}>Proof of purchase</Text></View>
+        <Text style={[type.body, { marginTop: spacing.sm }]}>{purchase.hasReceipt ? `${purchase.documents.filter(d => d.kind === 'receipt').length} receipt record(s) attached to this purchase.` : 'No receipt on record. Add your proof of purchase so it’s easy to find when you need it.'}</Text>
+        <Text style={[type.caption, { marginTop: spacing.sm }]}>Protection status uses your recorded dates and receipt records. It is not verification of a file, merchant policy, or claim eligibility.</Text>
+      </Card>
       <View style={styles.protectionGrid}>
         <Card style={styles.protectionCard}>
           <View style={styles.protectionHead}>
@@ -109,7 +114,7 @@ export function PurchaseDetails({ purchase, onClose, onEdit, onDelete, onUpdate,
             <View key={deadline.id} style={styles.factRow}>
               <Text style={type.body}>{deadline.title}</Text>
               <Text style={type.bodySmall}>{formatDate(deadline.date)}</Text>
-              <Badge label={badge.label} tone={badge.tone} />
+              <Badge label={deadline.completed ? 'Completed' : badge.label} tone={deadline.completed ? 'success' : badge.tone} />
             </View>
           ); })}
         </Card>
@@ -149,13 +154,13 @@ export function PurchaseDetails({ purchase, onClose, onEdit, onDelete, onUpdate,
       {expanded === 'assistant' ? <PurchaseAssistant purchase={purchase} onEditPurchase={() => onEdit(purchase)} /> : null}
 
       <ExpandableHeader icon="file-text" title="Claim generator" open={expanded === 'claim'} onToggle={() => toggle('claim')} />
-      {expanded === 'claim' ? <ClaimGenerator purchase={purchase} onSaveDraft={(document) => { onUpdate({ ...purchase, documents: [...purchase.documents, document] }); onNotify('Claim draft saved to your Vault.'); }} /> : null}
+      {expanded === 'claim' ? <ClaimGenerator purchase={purchase} onSaveDraft={async (document) => { await onUpdate({ ...purchase, documents: [...purchase.documents, document] }); onNotify('Claim draft saved to your Vault.'); }} /> : null}
 
       <View style={styles.dangerZone}>
         {confirmDelete ? (
           <Card style={styles.deleteCard}>
             <Text style={type.label}>Delete this purchase?</Text>
-            <Text style={[type.bodySmall, { marginTop: 4 }]}>This permanently removes the record and its local documents.</Text>
+            <Text style={[type.bodySmall, { marginTop: 4 }]}>This removes the purchase record and its document references. Cloud deletion is queued when signed in. Keep original files separately.</Text>
             <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
               <Button size="sm" label="Keep purchase" variant="secondary" onPress={() => setConfirmDelete(false)} />
               <Button size="sm" label="Delete permanently" icon="trash-2" variant="danger" onPress={() => onDelete(purchase)} />
@@ -208,13 +213,13 @@ const styles = StyleSheet.create({
   kindPicker: { gap: spacing.sm, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, marginBottom: spacing.md },
   protectionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   protectionCard: { flex: 1, flexBasis: 260, padding: spacing.lg, minWidth: 0 },
-  protectionHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  protectionHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
   protectionIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center' },
   section: { padding: spacing.lg, marginTop: spacing.md },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   factGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: spacing.sm },
   factCell: { flexGrow: 1, flexBasis: '46%', paddingVertical: spacing.sm, paddingRight: spacing.md },
-  factRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm },
+  factRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md, marginTop: spacing.sm },
   documentRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderColor: colors.border, marginTop: spacing.sm, paddingTop: spacing.sm },
   dangerZone: { marginTop: spacing.xl },
   deleteCard: { padding: spacing.lg, borderColor: '#F0C7CC', backgroundColor: colors.dangerSurface },

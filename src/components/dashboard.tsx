@@ -2,8 +2,8 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, radius, shadows, spacing, type } from '../design/tokens';
-import { actionNeeded, documentInventory, formatDate, formatMoney, greeting, protectionSummary, recentPurchases, todayLine, upcomingDeadlines, type NormalizedDeadline } from '../lib/purchaseSelectors';
-import type { ActionNeeded, Purchase } from '../types/purchase';
+import { actionNeeded, deadlineStatus, documentInventory, formatDate, formatMoney, greeting, protectionSummary, recentPurchases, todayLine, upcomingDeadlines, type NormalizedDeadline } from '../lib/purchaseSelectors';
+import type { ActionNeeded, FeatherIconName, Purchase } from '../types/purchase';
 import { Badge, Banner, Button, Card, EmptyState, SectionHeader } from './ui';
 import { AttentionRow, DeadlineRow, ProductTile, PurchaseCard } from './purchaseComponents';
 
@@ -38,7 +38,7 @@ export function Dashboard(props: DashboardProps) {
           <Text style={type.eyebrow}>{todayLine().toUpperCase()}</Text>
           <Text style={type.display}>{greeting()}{userEmail ? `, ${userEmail.split('@')[0]}` : ''}.</Text>
           <Text style={[type.body, { marginTop: spacing.sm, maxWidth: 620 }]}>
-            {items.length === 0 ? 'ProofPilot protects everything you buy — receipts, return windows, warranties, and the dates that matter.' : `You have ${summary.total} purchase${summary.total === 1 ? '' : 's'} on record${summary.attention + summary.unprotected ? `, and ${summary.attention + summary.unprotected} could use a little attention` : ''}.`}
+            {items.length === 0 ? 'Keep track of everything you buy — receipts, return windows, warranties, and the dates that matter.' : `You have ${summary.total} purchase${summary.total === 1 ? '' : 's'} on record${summary.attention + summary.unprotected ? `, and ${summary.attention + summary.unprotected} could use a little attention` : ''}.`}
           </Text>
         </View>
         <Button label="Protect a purchase" icon="plus" onPress={onAdd} />
@@ -46,7 +46,7 @@ export function Dashboard(props: DashboardProps) {
 
       {sampleVisible ? (
         <View style={{ marginBottom: spacing.xl }}>
-          <Banner tone="brand" icon="eye" title="You’re looking at sample data" message="These three purchases show how protection works. Add your own, or clear the samples to start fresh.">
+          <Banner tone="brand" icon="eye" title="You’re looking at sample data" message="Sample purchases are included in these totals. Add your own, or clear only the samples; your own purchases are kept.">
             <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, flexWrap: 'wrap' }}>
               <Button size="sm" label="Add my first purchase" icon="plus" onPress={() => { onDismissSample(); onAdd(); }} />
               <Button size="sm" variant="secondary" label="Clear samples" onPress={onClearSamples} />
@@ -62,11 +62,33 @@ export function Dashboard(props: DashboardProps) {
           <Card style={styles.featureCard}>
             <Feature icon="corner-up-left" title="Never miss a return window" body="Return deadlines and warranty expirations are grouped by urgency in Deadline Radar." />
             <Feature icon="archive" title="Every receipt in one vault" body="Receipts, warranty documents, and claim drafts stay attached to the purchase they belong to." />
-            <Feature icon="message-circle" title="Answers from your own records" body="Ask ProofPilot about a purchase and it responds using only the facts you saved — never guesses." />
+            <Feature icon="message-circle" title="Answers from your own records" body="Give the optional AI assistant your saved purchase fields. Review its answers against the merchant’s terms." />
           </Card>
         </>
       ) : (
         <>
+          <View style={styles.hero}>
+            <View style={styles.heroCopy}>
+              <View style={styles.heroKicker}><Feather name="shield" size={15} color={colors.brand} /><Text style={styles.heroEyebrow}>YOUR PURCHASES. BETTER PROTECTED.</Text></View>
+              <Text style={styles.heroTitle}>Keep the proof.
+Stay ahead of the dates.</Text>
+              <Text style={styles.heroBody}>A clear picture of what you own, what’s covered, and what needs your attention next.</Text>
+              <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, flexWrap: 'wrap' }}><Button label="Open Deadline Radar" icon="arrow-up-right" onPress={onDeadlines} /></View>
+            </View>
+            <View style={styles.heroAside}>
+              <View style={styles.heroShield}><Feather name="shield" size={34} color={colors.brand} /></View>
+              <Text style={styles.heroNumber}>{summary.protected}<Text style={{ fontSize: 22, color: '#B5C6C2' }}> / {summary.total}</Text></Text>
+              <Text style={styles.heroAsideLabel}>actively protected</Text>
+              <Text style={styles.heroAsideNote}>Receipt on record + an active
+return or warranty window</Text>
+            </View>
+          </View>
+          <View style={styles.metrics}>
+            <Metric icon="shopping-bag" value={summary.total} label="Purchases tracked" detail="Your collection, in one place" onPress={onPurchases} />
+            <Metric icon="shield" value={summary.protected} label="Actively protected" detail="Recorded dates, not a guarantee" onPress={onPurchases} />
+            <Metric icon="calendar" value={upcoming.filter(d => d.days <= 30).length} label="Deadlines in 30 days" detail="Incomplete · including today" onPress={onDeadlines} />
+            <Metric icon="clock" value={items.filter(p => p.warrantyEnd && deadlineStatus(p.warrantyEnd)!.days >= 0 && deadlineStatus(p.warrantyEnd)!.days <= 30).length} label="Warranties ending soon" detail="Within the next 30 days" onPress={onDeadlines} />
+          </View>
           <ProtectionOverview summary={summary} upcoming={upcoming} actions={actions} isPhone={isPhone} onDeadlines={onDeadlines} onPurchases={onPurchases} />
 
           {actions.length > 0 ? (
@@ -115,7 +137,7 @@ export function Dashboard(props: DashboardProps) {
               <View style={styles.assistantIcon}><Feather name="message-circle" size={20} color={colors.brandDark} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={type.heading}>Ask ProofPilot</Text>
-                <Text style={type.bodySmall}>{aiConfigured ? 'Answers come from your saved purchase facts only.' : 'Answers use your saved facts once the secure AI service is connected — until then, ProofPilot shows exactly what it knows and what’s missing.'}</Text>
+                <Text style={type.bodySmall}>{aiConfigured ? 'The assistant receives your saved purchase fields. Always review AI answers.' : 'Answers use your saved facts once the secure AI service is connected — until then, ProofPilot shows exactly what it knows and what’s missing.'}</Text>
               </View>
             </View>
             <View style={styles.assistantChips}>
@@ -143,13 +165,13 @@ function ProtectionOverview({ summary, upcoming, actions, isPhone, onDeadlines, 
         <View style={{ flex: 1 }}>
           <Text style={type.eyebrow}>PROTECTION OVERVIEW</Text>
           <Text style={styles.overviewTitle}>{summary.protected} of {summary.total} purchases protected</Text>
-          <Text style={[type.bodySmall, { marginTop: 2 }]}>{formatMoney(summary.valueProtected)} total value with coverage on record</Text>
+          <Text style={[type.bodySmall, { marginTop: 2 }]}>{formatMoney(summary.valueProtected)} recorded value with active coverage and a receipt</Text>
         </View>
         {actions.length > 0 ? <Button size="sm" variant="secondary" label={`${actions.length} to review`} icon="alert-circle" onPress={onDeadlines} /> : <Badge label="All clear" tone="success" icon="check-circle" />}
       </View>
       <View accessibilityLabel={`${summary.protected} protected, ${summary.attention} need attention, ${summary.unprotected} unprotected`} style={styles.progressTrack}>
-        <View style={[styles.progressSegment, { flexBasis: `${Math.max(protectedPct * 100, protectedPct > 0 ? 4 : 0)}%`, backgroundColor: colors.brandStrong }]} />
-        <View style={[styles.progressSegment, { flexBasis: `${Math.max(attentionPct * 100, attentionPct > 0 ? 4 : 0)}%`, backgroundColor: '#E4B15E' }]} />
+        <View style={[styles.progressSegment, { flexBasis: `${protectedPct * 100}%`, backgroundColor: colors.brandStrong }]} />
+        <View style={[styles.progressSegment, { flexBasis: `${attentionPct * 100}%`, backgroundColor: '#E4B15E' }]} />
         <View style={[styles.progressSegment, { flex: 1, backgroundColor: colors.borderStrong }]} />
       </View>
       <View style={[styles.overviewStats, isPhone && styles.overviewStatsPhone]}>
@@ -163,6 +185,13 @@ function ProtectionOverview({ summary, upcoming, actions, isPhone, onDeadlines, 
       </View>
     </Card>
   );
+}
+
+function Metric({ icon, value, label, detail, onPress }: { icon: FeatherIconName; value: number; label: string; detail: string; onPress: () => void }) {
+  return <Card onPress={onPress} accessibilityLabel={`${value} ${label}. ${detail}`} style={styles.metric}>
+    <View style={styles.metricTop}><Feather name={icon} size={18} color={colors.brandDark} /><Feather name="arrow-up-right" size={14} color={colors.muted} /></View>
+    <Text style={styles.metricValue}>{value}</Text><Text style={type.label}>{label}</Text><Text style={[type.caption, { marginTop: 5 }]}>{detail}</Text>
+  </Card>;
 }
 
 function LegendDot({ color, label }: { color: string; label: string }) {
@@ -185,13 +214,28 @@ function Feature({ icon, title, body }: { icon: 'corner-up-left' | 'archive' | '
 }
 
 const styles = StyleSheet.create({
+  hero: { borderRadius: 24, backgroundColor: '#193831', padding: spacing.xxl, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xl, overflow: 'hidden' },
+  heroCopy: { flex: 1, flexBasis: 300, minWidth: 0 },
+  heroKicker: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  heroEyebrow: { color: '#C6E0BD', fontSize: 10, letterSpacing: 1.4, fontWeight: '700', flexShrink: 1 },
+  heroTitle: { fontSize: 33, lineHeight: 39, letterSpacing: -1, color: '#FFFFFF', fontWeight: '800', marginTop: spacing.lg },
+  heroBody: { color: '#CCDAD4', fontSize: 14, lineHeight: 22, marginTop: spacing.md, maxWidth: 450 },
+  heroAside: { flexGrow: 1, flexBasis: 180, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: '#25483E', padding: spacing.xl },
+  heroShield: { width: 66, height: 66, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: '#345A46' },
+  heroNumber: { color: '#FFFFFF', fontWeight: '800', fontSize: 44, letterSpacing: -2, marginTop: 10 },
+  heroAsideLabel: { color: '#E2EFDD', fontSize: 14, fontWeight: '700' },
+  heroAsideNote: { color: '#BECEC6', textAlign: 'center', fontSize: 11, lineHeight: 17, marginTop: 8 },
+  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginVertical: spacing.lg },
+  metric: { flex: 1, flexBasis: 180, padding: spacing.lg, minWidth: 0 },
+  metricTop: { flexDirection: 'row', justifyContent: 'space-between' },
+  metricValue: { fontSize: 32, fontWeight: '800', color: colors.ink, letterSpacing: -1, marginTop: spacing.lg, marginBottom: 5 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: spacing.xl, marginBottom: spacing.xl, flexWrap: 'wrap' },
   headerPhone: { flexDirection: 'column', alignItems: 'stretch', gap: spacing.md },
   section: { marginTop: spacing.xl },
-  allClear: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, marginTop: spacing.xl },
-  columns: { flexDirection: 'row', gap: spacing.xl, marginTop: spacing.xl },
+  allClear: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md, padding: spacing.lg, marginTop: spacing.xl },
+  columns: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xl, marginTop: spacing.xl },
   columnsPhone: { flexDirection: 'column' },
-  column: { flex: 1, minWidth: 0 },
+  column: { flex: 1, flexBasis: 320, minWidth: 0 },
   recentGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   overview: { padding: spacing.xl },
   overviewTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
@@ -200,7 +244,7 @@ const styles = StyleSheet.create({
   progressSegment: { height: 10, borderRadius: radius.pill },
   overviewStats: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, marginTop: spacing.md, flexWrap: 'wrap' },
   overviewStatsPhone: { flexDirection: 'column', alignItems: 'flex-start', gap: spacing.sm },
-  overviewMeta: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  overviewMeta: { flexWrap: 'wrap', flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   legend: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 9, height: 9, borderRadius: 5 },
   vaultStrip: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, marginTop: spacing.xl },

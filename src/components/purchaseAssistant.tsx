@@ -1,3 +1,4 @@
+import { contextFor, claimTemplate } from '../services/ai/purchaseContext';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -10,7 +11,7 @@ import { Banner, Button, Card, Input, interactive } from './ui';
 type Message = { id: string; role: 'user' | 'assistant'; text: string; answer?: PurchaseAnswer };
 const questions = ['Can I still return this?', 'Is this still under warranty?', 'What should I do if it breaks?', 'What documents do I need?', 'What information is missing from this purchase?'];
 
-function contextFor(p: Purchase): PurchaseContext { return { productName: p.name, merchant: p.merchant, purchaseDate: p.purchaseDate ?? undefined, price: p.price ?? undefined, returnDeadline: p.returnDeadline ?? undefined, warrantyEnd: p.warrantyEnd ?? undefined, warrantyProvider: p.warrantyProvider ?? undefined, serialNumber: p.serial ?? undefined, modelNumber: p.model ?? undefined, documents: p.documents.map((d) => d.name), notes: p.notes ?? undefined }; }
+
 
 function knownFacts(p: Purchase): Array<[string, string]> {
   return [
@@ -49,7 +50,8 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
     setMessages((items) => [...items, { id: `question-${Date.now()}`, role: 'user', text }]);
     setQuestion(''); setState('loading');
     try {
-      const answer = await assistant.answerPurchaseQuestion(text, contextFor(purchase));
+      const generated = await assistant.answerPurchaseQuestion(text, contextFor(purchase));
+      const answer = { ...generated, knownFacts: known.map(([label, value]) => `${label}: ${value}`) };
       setMessages((items) => [...items, { id: `answer-${Date.now()}`, role: 'assistant', text: answer.answer, answer }]);
       setState('idle');
     } catch (error) {
@@ -59,6 +61,7 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
 
   return (
     <Card style={styles.card}>
+      <Text style={[type.caption, { marginBottom: spacing.md }]}>AI answers can be wrong. Context includes saved fields and document names, not document contents or verified merchant policies. Confirm terms with the merchant.</Text>
       <View style={styles.heading}>
         <View style={styles.icon}><Feather name="message-circle" size={18} color={colors.brandDark} /></View>
         <View style={styles.flex}>
@@ -126,7 +129,7 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
         </>
       ) : (
         <View style={{ marginTop: spacing.md }}>
-          <Banner tone="info" icon="lock" title="AI answers are not connected in this build" message="ProofPilot never invents answers. Once a secure AI service is configured, it will respond here using only the facts shown above — and it will say clearly when something is missing." />
+          <Banner tone="info" icon="lock" title="AI answers are not connected in this build" message="No answer was generated. Connect a secure AI service to ask questions using the saved fields above. AI answers still require review; document contents and merchant policies are not verified." />
           {missing.length && onEditPurchase ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, flexWrap: 'wrap' }}>
               <Text style={type.bodySmall}>Meanwhile, you can strengthen this record:</Text>

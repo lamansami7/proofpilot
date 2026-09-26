@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, radius, spacing, type } from '../design/tokens';
-import { formatDate, formatMoney, nextDeadlineFor, protectionLabel, type NormalizedDeadline } from '../lib/purchaseSelectors';
+import { deriveProtection, formatDate, formatMoney, nextDeadlineFor, protectionLabel, type NormalizedDeadline } from '../lib/purchaseSelectors';
 import type { ActionNeeded, Purchase } from '../types/purchase';
 import { Badge, Button, Card } from './ui';
 
@@ -51,7 +51,7 @@ export function AttentionRow({ action, onPress }: { action: ActionNeeded; onPres
 
 export function PurchaseCard({ item, onPress }: { item: Purchase; onPress: () => void }) {
   const next = nextDeadlineFor(item);
-  const statusTone = item.protectionStatus === 'protected' ? 'success' : item.protectionStatus === 'attention' ? 'warning' : 'neutral';
+  const statusTone = deriveProtection(item) === 'protected' ? 'success' : deriveProtection(item) === 'attention' ? 'warning' : 'neutral';
   return (
     <PressableCard item={item} onPress={onPress} statusTone={statusTone} next={next} />
   );
@@ -60,6 +60,7 @@ export function PurchaseCard({ item, onPress }: { item: Purchase; onPress: () =>
 function PressableCard({ item, onPress, statusTone, next }: { item: Purchase; onPress: () => void; statusTone: 'success' | 'warning' | 'neutral'; next: NormalizedDeadline | null }) {
   return (
     <Card onPress={onPress} accessibilityLabel={`Open ${item.name} from ${item.merchant}`} style={styles.purchaseCard}>
+      {typeof item.id === 'number' && [1, 2, 3].includes(item.id) ? <Text style={[type.eyebrow, { marginBottom: 8 }]}>SAMPLE PURCHASE</Text> : null}
       <View style={styles.purchaseTop}>
         <ProductTile purchase={item} size={46} />
         <View style={{ flex: 1, minWidth: 0 }}>
@@ -70,12 +71,16 @@ function PressableCard({ item, onPress, statusTone, next }: { item: Purchase; on
       <View style={styles.purchaseDivider} />
       <View style={styles.purchaseBottom}>
         <Text style={styles.price}>{formatMoney(item.price)}</Text>
-        <Badge label={protectionLabel(item.protectionStatus)} tone={statusTone} />
+        <Badge label={protectionLabel(deriveProtection(item))} tone={statusTone} />
       </View>
-      {next && next.days >= 0 ? (
+      <View style={[styles.nextDeadline, { flexWrap: 'wrap' }]}>
+        <Feather name={item.hasReceipt ? 'check-circle' : 'file-minus'} size={13} color={item.hasReceipt ? colors.success : colors.warning} />
+        <Text style={type.caption}>{item.hasReceipt ? 'Receipt on record' : 'Receipt missing'} · {item.documents.length} document{item.documents.length === 1 ? '' : 's'}</Text>
+      </View>
+      {next ? (
         <View style={styles.nextDeadline}>
           <Feather name="clock" size={13} color={next.status === 'urgent' || next.status === 'today' ? colors.warning : colors.muted} />
-          <Text numberOfLines={1} style={[styles.nextDeadlineText, (next.status === 'urgent' || next.status === 'today') && { color: colors.warning, fontWeight: '700' }]}>{next.title} · {formatDate(next.date)}</Text>
+          <Text numberOfLines={1} style={[styles.nextDeadlineText, (next.status === 'urgent' || next.status === 'today') && { color: colors.warning, fontWeight: '700' }]}>{next.title} · {daysLabel(next.days)}</Text>
         </View>
       ) : null}
     </Card>
@@ -91,7 +96,7 @@ const styles = StyleSheet.create({
   purchaseTop: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
   purchaseTitle: { ...type.label, fontSize: 14, marginBottom: 2 },
   purchaseDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
-  purchaseBottom: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, alignItems: 'center' },
+  purchaseBottom: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: spacing.sm, alignItems: 'center' },
   price: { fontSize: 16, fontWeight: '800', color: colors.ink, letterSpacing: -0.3 },
   nextDeadline: { flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: spacing.sm },
   nextDeadlineText: { ...type.bodySmall, flexShrink: 1 },

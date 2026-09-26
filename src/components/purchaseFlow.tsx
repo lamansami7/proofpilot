@@ -4,6 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, radius, spacing, type } from '../design/tokens';
+import { validatePurchaseFields } from '../lib/purchaseValidation';
 import { persistDocumentUri } from '../lib/documents';
 import { deriveProtection, formatDate, formatMoney, isValidIsoDate, isoDate, isoDaysFrom, protectionLabel } from '../lib/purchaseSelectors';
 import type { DeadlineType, DocumentKind, FeatherIconName, Purchase, PurchaseDeadline, PurchaseDocument } from '../types/purchase';
@@ -20,7 +21,7 @@ const categoryIcons: Record<string, FeatherIconName> = { Electronics: 'monitor',
 const tints = ['#E7EDFF', '#FAE8DB', '#E3F1E9', '#FBE9EA', '#F1E8FA', '#EAF2F8', '#F6F0DD'];
 
 function formFor(purchase: Purchase): Form { return { name: purchase.name, merchant: purchase.merchant, price: purchase.price?.toString() ?? '', purchaseDate: purchase.purchaseDate ?? '', category: purchase.category, serial: purchase.serial ?? '', model: purchase.model ?? '', returnDeadline: purchase.returnDeadline ?? '', warrantyEnd: purchase.warrantyEnd ?? '', warrantyProvider: purchase.warrantyProvider ?? '', notes: purchase.notes ?? '' }; }
-function sanitizePrice(value: string): string { const cleaned = value.replace(/[^0-9.]/g, ''); const firstDot = cleaned.indexOf('.'); if (firstDot === -1) return cleaned; return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '').slice(0, 2); }
+function sanitizePrice(value: string): string { return value; }
 async function documentFor(asset: DocumentPicker.DocumentPickerAsset, kind: DocumentKind): Promise<PurchaseDocument> {
   const uri = asset.uri ? await persistDocumentUri(asset.uri, asset.name) : null;
   return { id: `document-${Date.now()}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, uri, addedAt: isoDate(new Date()) };
@@ -45,8 +46,8 @@ function purchaseFromForm(form: Form, documents: PurchaseDocument[], customDeadl
     hasReceipt, hasWarrantyInfo: Boolean(warrantyEnd),
     notes: form.notes.trim() || null, documents,
     deadlines: [
-      ...(returnDeadline ? [{ id: `return-${id}`, type: 'return' as const, date: returnDeadline, title: 'Return window closes' }] : []),
-      ...(warrantyEnd ? [{ id: `warranty-${id}`, type: 'warranty' as const, date: warrantyEnd, title: 'Warranty expires' }] : []),
+      ...(returnDeadline ? [{ id: `return-${id}`, type: 'return' as const, date: returnDeadline, title: 'Return window closes', completed: existing?.deadlines.find(d => d.type === 'return' && d.date === returnDeadline)?.completed }] : []),
+      ...(warrantyEnd ? [{ id: `warranty-${id}`, type: 'warranty' as const, date: warrantyEnd, title: 'Warranty expires', completed: existing?.deadlines.find(d => d.type === 'warranty' && d.date === warrantyEnd)?.completed }] : []),
       ...carriedDeadlines,
     ],
   };
@@ -95,12 +96,8 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
   };
 
   const validate = (): boolean => {
-    const next: Partial<Record<Field, string>> = {};
-    if (!form.name.trim()) next.name = 'Enter the product name.';
-    if (!form.merchant.trim()) next.merchant = 'Enter the merchant.';
-    if (!form.price.trim() || !Number.isFinite(Number(form.price)) || Number(form.price) < 0) next.price = 'Enter a valid price, like 129.99.';
-    if (!isValidIsoDate(form.purchaseDate)) next.purchaseDate = 'Use YYYY-MM-DD, or tap one of the quick dates.';
-    (['returnDeadline', 'warrantyEnd'] as Field[]).forEach((field) => { if (form[field] && !isValidIsoDate(form[field])) next[field] = 'Use YYYY-MM-DD, or clear the field.'; });
+    const next: Partial<Record<Field, string>> = validatePurchaseFields(form);
+    if (customDeadlines.some((d) => !d.title.trim() || !isValidIsoDate(d.date))) next.notes = 'Check custom deadline names and dates before continuing.';
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -109,7 +106,7 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
   const merchantSuggestions = useMemo(() => { const typed = form.merchant.trim().toLowerCase(); return merchants.filter((merchant) => !typed || merchant.toLowerCase().includes(typed)).filter((merchant) => merchant.toLowerCase() !== typed).slice(0, 3); }, [merchants, form.merchant]);
 
   return (
-    <Sheet visible={visible} onClose={onClose} wide eyebrow={editing ? 'EDIT RECORD' : 'NEW RECORD'} title={editing ? 'Edit purchase' : 'Protect a purchase'} subtitle={editing ? 'Keep this purchase record accurate and complete.' : 'Receipts, return windows, and warranties — one safe place.'}>
+    <Sheet visible={visible} onClose={() => { if (saveState !== 'saving') onClose(); }} wide eyebrow={editing ? 'EDIT RECORD' : 'NEW RECORD'} title={editing ? 'Edit purchase' : 'Protect a purchase'} subtitle={editing ? 'Keep this purchase record accurate and complete.' : 'Receipts, return windows, and warranties — one safe place.'}>
       {step === 'start' ? <StartStep onManual={() => setStep('form')} onScan={scanReceipt} onUpload={() => pickDocument('receipt')} upload={upload} /> : null}
       {step === 'form' ? (
         <FormStep form={form} errors={errors} documents={documents} upload={upload} pendingKind={pendingKind} customDeadlines={customDeadlines} onCustomDeadlinesChange={setCustomDeadlines} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { if (validate()) setStep('review'); }} />

@@ -1,5 +1,5 @@
-import React from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { breakpoints, colors, radius, shadows, sizing, spacing, type, webTransition } from '../design/tokens';
 import type { FeatherIconName } from '../types/purchase';
@@ -35,7 +35,7 @@ export function Button({ label, onPress, icon, variant = 'primary', size = 'md',
 }
 
 export function IconButton({ icon, label, onPress, tone = 'default', size = sizing.iconButton, disabled }: { icon: FeatherIconName; label: string; onPress: () => void; tone?: 'default' | 'ghost'; size?: number; disabled?: boolean }) {
-  const base: ViewStyle = { ...styles.iconButton, height: size, width: size, ...(tone === 'ghost' ? { borderWidth: 0, backgroundColor: 'transparent' } : null) };
+  const base: ViewStyle = { ...styles.iconButton, height: Math.max(size, 44), width: Math.max(size, 44), ...(tone === 'ghost' ? { borderWidth: 0, backgroundColor: 'transparent' } : null) };
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={interactive(base)}>
       <Feather name={icon} size={size >= 40 ? 18 : 16} color={colors.ink} />
@@ -86,7 +86,7 @@ export function Input(props: InputProps) {
       {label ? <Text style={styles.inputLabel}>{label}</Text> : null}
       <View style={[styles.inputShell, error ? styles.inputShellError : null, inputProps.multiline && styles.inputShellMultiline]}>
         {prefix ? <Text style={styles.inputPrefix}>{prefix}</Text> : null}
-        <TextInput placeholderTextColor={colors.subtle} {...inputProps} style={[styles.input, prefix ? { paddingLeft: 6 } : null, inputProps.multiline && styles.inputMultiline, inputProps.style]} />
+        <TextInput accessibilityLabel={inputProps.accessibilityLabel ?? label} placeholderTextColor={colors.subtle} {...inputProps} style={[styles.input, prefix ? { paddingLeft: 6 } : null, inputProps.multiline && styles.inputMultiline, inputProps.style]} />
       </View>
       {error ? <Text accessibilityLiveRegion="polite" style={styles.inputError}><Feather name="alert-circle" size={12} color={colors.danger} /> {error}</Text> : hint ? <Text style={styles.inputHint}>{hint}</Text> : null}
     </View>
@@ -106,9 +106,22 @@ export function Chip({ label, selected, onPress, icon }: { label: string; select
 export function Sheet({ visible, onClose, title, subtitle, eyebrow, wide, children }: { visible: boolean; onClose: () => void; title?: string; subtitle?: string; eyebrow?: string; wide?: boolean; children: React.ReactNode }) {
   const { width } = useWindowDimensions();
   const phone = width <= breakpoints.phone;
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled().then(value => { if (active) setReducedMotion(value); });
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReducedMotion);
+    return () => { active = false; subscription.remove(); };
+  }, []);
+  useEffect(() => {
+    if (!visible || Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } };
+    window.addEventListener('keydown', escape);
+    return () => window.removeEventListener('keydown', escape);
+  }, [visible, onClose]);
   if (!visible) return null;
   return (
-    <Modal transparent visible animationType="fade" onRequestClose={onClose}>
+    <Modal transparent visible animationType={reducedMotion ? 'none' : 'fade'} onRequestClose={onClose}>
       <View style={[styles.sheetRoot, phone ? null : styles.sheetRootCentered]}>
         <Pressable accessibilityRole="button" accessibilityLabel="Dismiss dialog" onPress={onClose} style={styles.sheetBackdrop} />
         <View style={[styles.sheetSurface, wide ? styles.sheetSurfaceWide : null, phone ? null : styles.sheetSurfaceDialog]}>

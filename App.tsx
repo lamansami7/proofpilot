@@ -10,14 +10,14 @@ import { PurchaseFlow } from './src/components/purchaseFlow';
 import { PurchasesScreen } from './src/components/purchasesScreen';
 import { SettingsScreen } from './src/components/settingsScreen';
 import { VaultScreen } from './src/components/vaultScreen';
-import { IconButton, Input, LoadingState, interactive } from './src/components/ui';
+import { Banner, Button, IconButton, Input, LoadingState, interactive } from './src/components/ui';
 import { demoPurchases } from './src/data/demoPurchases';
 import { colors, radius, shadows, sizing, spacing, type } from './src/design/tokens';
 import { useAppSettings } from './src/hooks/useAppSettings';
 import { useBreakpoint } from './src/hooks/useBreakpoint';
 import { usePurchaseStore } from './src/hooks/usePurchaseStore';
 import { useSession } from './src/hooks/useSession';
-import { documentInventory, initialsFor, matchesPurchaseSearch, normalizedDeadlines, urgentDeadlines } from './src/lib/purchaseSelectors';
+import { deriveProtection, documentInventory, initialsFor, matchesPurchaseSearch, normalizedDeadlines, urgentDeadlines } from './src/lib/purchaseSelectors';
 import { createAIService } from './src/services/ai/AIService';
 import type { FeatherIconName, Purchase } from './src/types/purchase';
 
@@ -29,7 +29,11 @@ export default function App() {
   const viewport = useBreakpoint();
   const session = useSession();
   const store = usePurchaseStore(session.user?.id);
-  const { settings, update: updateSettings } = useAppSettings();
+  const { settings, update: persistSettings, hydrated: settingsReady, error: settingsError } = useAppSettings();
+  const updateSettings = async (patch: Parameters<typeof persistSettings>[0]) => { await persistSettings(patch); };
+  const dismissSample = () => { updateSettings({ sampleBannerDismissed: true }).catch(() => notify('Settings could not be saved.', 'danger')); };
+  const [, tick] = useState(0);
+  useEffect(() => { const timer = setInterval(() => tick(value => value + 1), 60000); return () => clearInterval(timer); }, []);
   const [tab, setTab] = useState<Tab>('Home');
   const [selectedId, setSelectedId] = useState<Purchase['id'] | null>(null);
   const [flowOpen, setFlowOpen] = useState(false);
@@ -46,7 +50,7 @@ export default function App() {
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
   useEffect(() => { if (store.storageError) notify('Device storage is unavailable — changes may not persist between sessions.', 'danger'); }, [store.storageError]);
 
-  const items = store.items;
+  const items = store.items.map(item => ({ ...item, protectionStatus: deriveProtection(item) }));
   const selected = useMemo(() => items.find((item) => item.id === selectedId) ?? null, [items, selectedId]);
   const deadlines = useMemo(() => normalizedDeadlines(items), [items]);
   const urgentCount = useMemo(() => urgentDeadlines(items).length, [items]);
@@ -55,10 +59,7 @@ export default function App() {
   const aiConfigured = useMemo(() => createAIService().isConfigured, []);
   const userEmail = session.user?.email ?? null;
 
-  const sampleVisible = useMemo(() => {
-    if (settings.sampleBannerDismissed || items.length !== demoPurchases.length || items.length === 0) return false;
-    return items.every((item) => demoPurchases.some((demo) => demo.id === item.id));
-  }, [items, settings.sampleBannerDismissed]);
+  const sampleVisible = items.some(item => demoPurchases.some(demo => demo.id === item.id)) && !settings.sampleBannerDismissed;
 
   const filtered = useMemo(() => items.filter((item) => matchesPurchaseSearch(item, query)), [items, query]);
 
@@ -66,11 +67,12 @@ export default function App() {
   const openAddFlow = () => { setEditing(null); setFlowOpen(true); };
   const openEditFlow = (purchase: Purchase) => { setSelectedId(null); setEditing(purchase); setFlowOpen(true); };
   const savePurchase = async (purchase: Purchase) => { await store.upsert(purchase); notify(editing ? 'Purchase record updated.' : `${purchase.name} was saved.`); };
-  const updatePurchase = (purchase: Purchase) => { store.upsert(purchase).catch(() => notify('That change could not be saved.', 'danger')); };
+  const updatePurchase = (purchase: Purchase) => store.upsert(purchase);
   const deletePurchase = async (purchase: Purchase) => { try { await store.remove(purchase.id); setSelectedId(null); notify(`${purchase.name} was deleted.`, 'info'); } catch { notify('The purchase could not be deleted.', 'danger'); } };
 
   const onSearch = (value: string) => { setQuery(value); if (value && tab !== 'Purchases') setTab('Purchases'); };
-  const restoreSamples = () => { store.restoreSamples(); updateSettings({ sampleBannerDismissed: false }); };
+  const restoreSamples = async () => { try { await store.restoreSamples(); await updateSettings({ sampleBannerDismissed: false }); notify('Sample records added. Existing purchases were kept.'); } catch { notify('Samples could not be saved.', 'danger'); } };
+  const clearRecords = async (samplesOnly = false) => { try { await store.replaceAll(samplesOnly ? items.filter(item => !demoPurchases.some(d => d.id === item.id)) : []); notify(samplesOnly ? 'Sample records cleared.' : 'Records deleted on this device. Cloud changes are queued when signed in.', 'info'); } catch { notify('Could not delete records. Your saved data is unchanged.', 'danger'); } };
 
   if (session.configured && session.loading) {
     return (
@@ -117,13 +119,18 @@ export default function App() {
         <View style={styles.main}>
           <Topbar query={query} onSearch={onSearch} urgentCount={urgentCount} userEmail={userEmail} compact={viewport.isPhone} onDeadlines={() => setTab('Deadlines')} onAccount={() => setTab('Settings')} />
           <ScrollView contentContainerStyle={[styles.content, viewport.isPhone && styles.contentPhone]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            {!store.hydrated ? <LoadingState label="Loading your protection record…" /> : (
+            {!store.hydrated || !settingsReady ? <LoadingState label="Loading your protection record…" /> : (
               <>
-                {tab === 'Home' ? <Dashboard items={items} isPhone={viewport.isPhone} userEmail={userEmail} sampleVisible={sampleVisible} aiConfigured={aiConfigured} onAdd={openAddFlow} onOpen={openPurchase} onPurchases={() => setTab('Purchases')} onDeadlines={() => setTab('Deadlines')} onVault={() => setTab('Vault')} onDismissSample={() => updateSettings({ sampleBannerDismissed: true })} onClearSamples={() => { store.replaceAll([]); updateSettings({ sampleBannerDismissed: true }); notify('Sample data cleared.', 'info'); }} onRestoreSamples={() => { restoreSamples(); notify('Sample data loaded.'); }} /> : null}
+                {store.storageError || settingsError ? <View style={{ marginBottom: spacing.lg }}><Banner tone="danger" icon="alert-circle" title="Device storage needs attention" message={store.storageError ?? settingsError!} /></View> : null}
+                <View style={styles.statusStrip}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 }}><Feather name={store.syncStatus === 'error' ? 'cloud-off' : session.user ? 'cloud' : 'hard-drive'} size={14} color={colors.muted} /><Text style={type.caption}>{store.saving ? 'Saving to device…' : store.syncStatus === 'syncing' ? 'Synchronizing purchase records…' : store.syncStatus === 'error' ? 'Saved on device · cloud sync needs attention' : store.syncStatus === 'synced' ? 'Cloud checked · no pending uploads · files stay on device' : 'Device storage · cloud sync is not connected'}</Text></View>
+                  {store.syncStatus === 'error' ? <Button size="sm" variant="ghost" label="Retry sync" onPress={() => { void store.retrySync(); }} /> : null}
+                </View>
+                {tab === 'Home' ? <Dashboard items={items} isPhone={viewport.isPhone} userEmail={userEmail} sampleVisible={sampleVisible} aiConfigured={aiConfigured} onAdd={openAddFlow} onOpen={openPurchase} onPurchases={() => setTab('Purchases')} onDeadlines={() => setTab('Deadlines')} onVault={() => setTab('Vault')} onDismissSample={dismissSample} onClearSamples={() => { void clearRecords(true); }} onRestoreSamples={restoreSamples} /> : null}
                 {tab === 'Purchases' ? <PurchasesScreen items={filtered} total={items.length} query={query} onAdd={openAddFlow} onOpen={openPurchase} /> : null}
-                {tab === 'Deadlines' ? <DeadlineRadar deadlines={deadlines} onOpenPurchase={openPurchase} onAdd={openAddFlow} /> : null}
+                {tab === 'Deadlines' ? <DeadlineRadar onUpdate={updatePurchase} deadlines={deadlines} onOpenPurchase={openPurchase} onAdd={openAddFlow} /> : null}
                 {tab === 'Vault' ? <VaultScreen items={items} onAdd={openAddFlow} onOpenPurchase={openPurchase} onUpdatePurchase={updatePurchase} /> : null}
-                {tab === 'Settings' ? <SettingsScreen items={items} settings={settings} updateSettings={updateSettings} userEmail={userEmail} configured={session.configured} syncStatus={store.syncStatus} syncError={store.syncError} onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))} onRestoreSamples={() => { restoreSamples(); notify('Sample data restored.'); }} onDeleteAll={() => { store.replaceAll([]); notify('All purchases deleted from this device.', 'info'); }} onNotify={notify} /> : null}
+                {tab === 'Settings' ? <SettingsScreen items={items} settings={settings} updateSettings={updateSettings} userEmail={userEmail} configured={session.configured} syncStatus={store.syncStatus} syncError={store.syncError} onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))} onRestoreSamples={restoreSamples} onDeleteAll={() => { void clearRecords(); }} onNotify={notify} /> : null}
               </>
             )}
           </ScrollView>
@@ -138,7 +145,7 @@ export default function App() {
       ) : null}
 
       <PurchaseFlow visible={flowOpen} initialPurchase={editing} merchants={merchants} defaultReturnDays={settings.defaultReturnWindowDays} onClose={() => { setFlowOpen(false); setEditing(null); }} onSave={savePurchase} onDone={(purchase) => { setFlowOpen(false); setEditing(null); setSelectedId(purchase.id); }} />
-      <PurchaseDetails purchase={selected} onClose={() => setSelectedId(null)} onEdit={openEditFlow} onDelete={deletePurchase} onUpdate={updatePurchase} onNotify={notify} />
+      <PurchaseDetails key={selected?.id ?? "none"} purchase={selected} onClose={() => setSelectedId(null)} onEdit={openEditFlow} onDelete={deletePurchase} onUpdate={updatePurchase} onNotify={notify} />
 
       {toast ? (
         <View accessibilityLiveRegion="polite" style={[styles.toast, viewport.isPhone && styles.toastPhone]}>
@@ -186,8 +193,8 @@ function Sidebar({ groups, active, onSelect, userEmail, configured, onSignOut, i
         <View style={styles.syncCard}>
           <Feather name={configured ? 'cloud' : 'hard-drive'} size={16} color={colors.brandDark} />
           <View style={{ flex: 1 }}>
-            <Text style={type.label}>{configured ? 'Cloud ready' : 'Local mode'}</Text>
-            <Text style={type.caption}>{configured ? 'Supabase configured' : `${itemCount} purchase${itemCount === 1 ? '' : 's'} stored on this device`}</Text>
+            <Text style={type.label}>{configured ? 'Account connected' : 'Local mode'}</Text>
+            <Text style={type.caption}>{configured ? 'See sync status above your records' : `${itemCount} purchase${itemCount === 1 ? '' : 's'} stored on this device`}</Text>
           </View>
         </View>
         <View style={styles.profile}>
@@ -205,14 +212,14 @@ function Sidebar({ groups, active, onSelect, userEmail, configured, onSignOut, i
 
 function Topbar({ query, onSearch, urgentCount, userEmail, compact, onDeadlines, onAccount }: { query: string; onSearch: (value: string) => void; urgentCount: number; userEmail: string | null; compact: boolean; onDeadlines: () => void; onAccount: () => void }) {
   return (
-    <View style={styles.topbar}>
+    <View style={[styles.topbar, compact && { paddingHorizontal: spacing.lg, flexWrap: 'wrap', paddingVertical: spacing.md, gap: spacing.sm }]}>
       {compact ? (
         <View style={styles.mobileBrand}>
           <View style={styles.logoSmall}><Feather name="shield" size={15} color={colors.ink} /></View>
           <Text style={styles.brandName}>ProofPilot</Text>
         </View>
       ) : null}
-      <View style={styles.search}>
+      <View style={[styles.search, compact && { minWidth: 120 }]}>
         <Feather name="search" size={17} color={colors.muted} />
         <Input accessibilityLabel="Search your purchases" value={query} onChangeText={onSearch} placeholder={compact ? 'Search purchases' : 'Search purchases, merchants, serial numbers…'} containerStyle={{ flex: 1 }} style={styles.searchInput} />
         {query ? <IconButton icon="x" label="Clear search" size={30} tone="ghost" onPress={() => onSearch('')} /> : null}
@@ -255,6 +262,7 @@ function BottomNav({ active, onSelect, urgentCount }: { active: Tab; onSelect: (
 }
 
 const styles = StyleSheet.create({
+  statusStrip: { flexDirection: 'row', gap: spacing.sm, alignItems: 'center', marginBottom: spacing.lg, minHeight: 24 },
   app: { flex: 1, backgroundColor: colors.canvas },
   boot: { flex: 1, justifyContent: 'center', gap: spacing.xl, padding: spacing.xl },
   frame: { flex: 1, flexDirection: 'row', width: '100%', alignSelf: 'center' },
@@ -281,7 +289,7 @@ const styles = StyleSheet.create({
   avatar: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F2E7DD' },
   avatarText: { fontSize: 11, fontWeight: '800', color: colors.ink },
   topbar: { minHeight: 68, paddingHorizontal: spacing.xl, backgroundColor: colors.surface, borderBottomWidth: 1, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  mobileBrand: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  mobileBrand: { flexBasis: '100%', flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   search: { minHeight: sizing.touchCompact + 4, maxWidth: 560, flex: 1, flexDirection: 'row', alignItems: 'center', paddingLeft: spacing.md, paddingRight: spacing.xs, gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.canvas },
   searchInput: { borderWidth: 0, backgroundColor: 'transparent', paddingHorizontal: 0, height: '100%', minHeight: 0 },
   bellBadge: { position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: colors.warning, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
