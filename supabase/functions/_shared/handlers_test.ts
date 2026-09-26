@@ -1,6 +1,6 @@
 import { createAIHandler } from './ai.ts';
 import { createDeletionHandler } from './deletion.ts';
-import { HttpError } from './http.ts';
+import { HttpError, readJson } from './http.ts';
 function assert(value: unknown,message='Assertion failed'): asserts value { if (!value) throw new Error(message); }
 const request=(path:string,body:unknown,headers:Record<string,string>={})=>new Request(`https://functions.test/${path}`,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer verified.test.token',...headers},body:JSON.stringify(body)});
 const identity={id:'verified-owner',passwordVerifiedAt:1000};
@@ -41,4 +41,40 @@ Deno.test('storage failure/partial cleanup never deletes Auth; retry preserves o
 Deno.test('internal errors are redacted',async()=>{
  const handler=createAIHandler({allowedOrigins:[],enabled:true,authenticate:async()=>{throw new HttpError(401,'invalid_session');},reserve:async()=>true,generate:async()=>{throw new Error('secret');}});
  const response=await handler(request('purchase-question',valid));assert(response.status===401);assert(!(await response.text()).includes('secret'));
+});
+Deno.test('model-authored facts are replaced with user-provided context and a mandatory warning',async()=>{
+ const handler=createAIHandler({allowedOrigins:[],enabled:true,authenticate:async()=>identity,reserve:async()=>true,generate:async()=>({answer:'Suggestion',knownFacts:['Invented lifetime warranty'],missingInformation:[]})});
+ const response=await handler(request('purchase-question',valid));const body=await response.json();
+ assert(body.answer.startsWith('AI-GENERATED GUIDANCE — VERIFY BEFORE USING'));
+ assert(JSON.stringify(body.knownFacts)===JSON.stringify(['User-provided productName: User entered product']));
+});
+Deno.test('claim warning is enforced even when the model omits it',async()=>{
+ const handler=createAIHandler({allowedOrigins:[],enabled:true,authenticate:async()=>identity,reserve:async()=>true,generate:async()=>({draft:'Suggestion',knownFacts:[],missingInformation:[]})});
+ const response=await handler(request('claim-draft',{context:valid.context,type:'return'}));
+ assert((await response.json()).draft.startsWith('DRAFT — VERIFY BEFORE SENDING'));
+});
+Deno.test('quota service failure never calls the provider',async()=>{
+ let called=false;const handler=createAIHandler({allowedOrigins:[],enabled:true,authenticate:async()=>identity,reserve:async()=>{throw new Error('private');},generate:async()=>{called=true;return {};}});
+ const response=await handler(request('purchase-question',valid));assert(response.status===503);assert(!called);assert(!(await response.text()).includes('private'));
+});
+Deno.test('Auth deletion failure cannot return confirmed success',async()=>{
+ const handler=createDeletionHandler({allowedOrigins:[],now:()=>1000000,authenticate:async()=>identity,begin:async()=>{},removeFiles:async()=>true,deleteUser:async()=>{throw new Error('private');}});
+ const response=await handler(request('delete-account',{confirmation:'DELETE'}));assert(response.status===503);assert(!(await response.text()).includes('private'));
+});
+Deno.test('JSON lookalike media types are rejected before quota reservation',async()=>{
+ let called=false;const handler=createAIHandler({allowedOrigins:[],enabled:true,authenticate:async()=>identity,reserve:async()=>{called=true;return true;},generate:async()=>({})});
+ assert((await handler(request('purchase-question',valid,{'content-type':'application/jsonp'}))).status===415);assert(!called);
+});
+
+Deno.test('provider response reader bounds bytes even without Content-Length',async()=>{
+ let rejected=false;
+ try { await readJson(new Response(JSON.stringify({text:'x'.repeat(100)}),{headers:{'content-type':'application/json'}}),32); }
+ catch (error) { rejected=error instanceof HttpError && error.status===413; }
+ assert(rejected);
+});
+Deno.test('provider response reader rejects non-object JSON',async()=>{
+ let rejected=false;
+ try { await readJson(new Response('[]',{headers:{'content-type':'application/json'}})); }
+ catch (error) { rejected=error instanceof HttpError && error.status===400; }
+ assert(rejected);
 });

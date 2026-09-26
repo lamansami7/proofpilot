@@ -19,7 +19,8 @@
     "check:edge": "deno check supabase/functions/proofpilot-ai/index.ts supabase/functions/delete-account/index.ts",
     "test:live": "node scripts/verify-live.mjs",
     "check:release": "node scripts/check-release.mjs",
-    "measure:web": "node scripts/measure-web.mjs"
+    "measure:web": "node scripts/measure-web.mjs",
+    "test:release-config": "node --test scripts/release-config.test.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",
@@ -62,7 +63,23 @@
     ],
     "setupFiles": [
       "./jest.setup.js"
-    ]
+    ],
+    "transform": {
+      "\\.[jt]sx?$": [
+        "babel-jest",
+        {
+          "caller": {
+            "name": "metro",
+            "bundler": "metro",
+            "platform": "ios",
+            "preserveEnvVars": true
+          },
+          "presets": [
+            "babel-preset-expo"
+          ]
+        }
+      ]
+    }
   },
   "overrides": {
     "react": "18.3.1",

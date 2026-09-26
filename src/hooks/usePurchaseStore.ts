@@ -12,7 +12,7 @@ import type { Purchase } from '../types/purchase';
 
 export type SyncStatus = 'local' | 'syncing' | 'synced' | 'error';
 
-export function usePurchaseStore(userId?: string | null) {
+export function usePurchaseStore(userId?: string | null, enabled = true) {
   const [generation, setGeneration] = useState(0);
   const [items, setItems] = useState<Purchase[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -28,6 +28,7 @@ export function usePurchaseStore(userId?: string | null) {
   const account = useRef(userId); account.current = userId;
 
   useEffect(() => {
+    if (!enabled) { engine.current = null; setItems([]); setHydrated(false); return; }
     let cancelled = false;
     const key = storageKeyFor(userId);
     const store = new LocalPurchaseStore(snapshot => AsyncStorage.setItem(key, JSON.stringify(snapshot)), async () => readSnapshot(await AsyncStorage.getItem(key)), operation => withStorageLock(key, operation));
@@ -43,7 +44,7 @@ export function usePurchaseStore(userId?: string | null) {
       }
     })();
     return () => { cancelled = true; engine.current = null; };
-  }, [userId, generation]);
+  }, [userId, generation, enabled]);
 
   const retryCleanup = useCallback(async () => {
     const store = engine.current;

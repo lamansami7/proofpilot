@@ -39,7 +39,7 @@ export function useSession() {
       clearTimeout(timer); setError('Could not restore your session. Retry without clearing device data.'); setLoading(false);
     });
     const recover = async (url: string | null) => {
-      if (!url || handledLink.current === url) return;
+      if (!active || !url || handledLink.current === url) return;
       const code = nativeRecoveryCode(url);
       if (!code) return;
       handledLink.current = url;

@@ -6,8 +6,8 @@ export function cors(request: Request, allowedOrigins: string[]) {
     'Access-Control-Allow-Headers': 'authorization, content-type, apikey, x-client-info',
     'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Cache-Control': 'no-store' };
 }
-export async function readJson(request: Request, maxBytes = 16384): Promise<Record<string, unknown>> {
-  if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) throw new HttpError(415, 'json_required');
+export async function readJson(request: Request | Response, maxBytes = 16384): Promise<Record<string, unknown>> {
+  if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') throw new HttpError(415, 'json_required');
   if (Number(request.headers.get('content-length')) > maxBytes) throw new HttpError(413, 'request_too_large');
   const reader = request.body?.getReader();
   if (!reader) throw new HttpError(400, 'body_required');

@@ -8,10 +8,25 @@ const PREFIX = 'proofpilot.v1.account-purge.';
 type Purge = { userId: string; confirmed: boolean; files: string[] };
 export const accountDeletionEnabled = Boolean(supabase) && process.env.EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED === 'true';
 
+function parsePurge(raw: string, key: string): Purge {
+  const purge = JSON.parse(raw) as Purge;
+  if (!purge || typeof purge.userId !== 'string' || typeof purge.confirmed !== 'boolean' || key !== PREFIX + purge.userId || !Array.isArray(purge.files) || purge.files.some(uri => typeof uri !== 'string')) throw new Error('Device cleanup needs support; saved data has not been overwritten.');
+  return purge;
+}
+
 async function finishPurge(key: string, purge: Purge) {
   if (!purge.confirmed) return;
+  // Keep the confirmed ledger until both credentials and managed data are gone.
+  // A returned Auth error is not a successful sign-out. Never sign out another account.
+  if (supabase) {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    if (data.session?.user.id === purge.userId) {
+      const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+      if (signOutError) throw signOutError;
+    }
+  }
   await withStorageLock(storageKeyFor(purge.userId), () => AsyncStorage.removeItem(storageKeyFor(purge.userId)));
-  // Other account/guest caches are checked before each file removal.
   for (const uri of purge.files) await removeUnreferencedFile(uri);
   await AsyncStorage.removeItem(key);
 }
@@ -20,8 +35,7 @@ export async function resumeConfirmedPurges() {
   for (const key of (await AsyncStorage.getAllKeys()).filter(value => value.startsWith(PREFIX))) {
     const raw = await AsyncStorage.getItem(key);
     if (!raw) continue;
-    const purge = JSON.parse(raw) as Purge;
-    if (!purge || typeof purge.userId !== 'string' || typeof purge.confirmed !== 'boolean' || key !== PREFIX + purge.userId || !Array.isArray(purge.files) || purge.files.some(uri => typeof uri !== 'string')) throw new Error('Device cleanup needs support; saved data has not been overwritten.');
+    const purge = parsePurge(raw, key);
     if (!purge.confirmed) unconfirmed++;
     await finishPurge(key,purge);
   }
@@ -37,7 +51,7 @@ export async function deleteCurrentAccount(password: string): Promise<{ localCle
   const userId = data.user.id; const key = PREFIX + userId;
   const snapshot = readSnapshot(await AsyncStorage.getItem(storageKeyFor(userId)));
   const previous = await AsyncStorage.getItem(key);
-  const previousFiles: string[] = previous ? (JSON.parse(previous) as Purge).files : [];
+  const previousFiles: string[] = previous ? parsePurge(previous, key).files : [];
   const purge: Purge = { userId,confirmed:false,files:[...new Set([...documentUris(snapshot.items),...(snapshot.cleanup ?? []),...previousFiles])] };
   await AsyncStorage.setItem(key,JSON.stringify(purge));
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(),30000);
@@ -57,6 +71,5 @@ export async function deleteCurrentAccount(password: string): Promise<{ localCle
   let pending = false;
   try { await AsyncStorage.setItem(key,JSON.stringify(purge)); await finishPurge(key,purge); }
   catch { pending = true; }
-  await supabase.auth.signOut({ scope:'local' });
   return { localCleanupPending:pending };
 }

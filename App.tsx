@@ -38,13 +38,14 @@ type Toast = { message: string; tone: 'success' | 'danger' | 'info' };
 export default function App() {
   const [offlineShellReady, setOfflineShellReady] = useState(false);
   useEffect(() => { void registerOfflineShell().then(setOfflineShellReady); }, []);
+  const [purgeChecked, setPurgeChecked] = useState(false);
   const [purgeError, setPurgeError] = useState(false);
-  const finishCleanup = () => resumeConfirmedPurges().then(result => { setPurgeError(result.unconfirmed > 0); }).catch(() => setPurgeError(true));
+  const finishCleanup = () => resumeConfirmedPurges().then(result => { setPurgeError(result.unconfirmed > 0); }).catch(() => setPurgeError(true)).finally(() => setPurgeChecked(true));
   useEffect(() => { void finishCleanup(); }, []);
   const scrollRef = useRef<ScrollView>(null);
   const viewport = useBreakpoint();
   const session = useSession();
-  const store = usePurchaseStore(session.user?.id);
+  const store = usePurchaseStore(session.user?.id, purgeChecked && !purgeError);
   const { settings, update: persistSettings, hydrated: settingsReady, error: settingsError } = useAppSettings();
   const updateSettings = async (patch: Parameters<typeof persistSettings>[0]) => {
     await persistSettings(patch);
@@ -159,7 +160,19 @@ export default function App() {
   const showOnboarding = store.hydrated && settingsReady && items.length === 0 && !settings.onboardingCompleted;
   useEffect(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); }, [tab, showOnboarding]);
 
-  if (purgeError) return <SafeAreaView style={styles.app}><Banner tone="danger" icon="alert-circle" title="Device cleanup needs attention" message="Cloud deletion may have completed, but local account cleanup could not finish. Keep this device private and retry. If this persists, clear ProofPilot site/app data after backing up other accounts." /><Button label="Retry device cleanup" onPress={() => { void finishCleanup(); }} /></SafeAreaView>;
+  if (!purgeChecked) return <SafeAreaView style={styles.app}><LoadingState label="Checking device cleanup…" /></SafeAreaView>;
+
+  if (purgeError) return (
+    <SafeAreaView style={styles.app}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: spacing.lg }}>
+        <View style={{ width: '100%', maxWidth: 560, alignSelf: 'center', gap: spacing.lg }}>
+          <Text accessibilityRole="header" style={type.title}>ProofPilot</Text>
+          <Banner tone="danger" icon="alert-circle" title="Device cleanup needs attention" message="Cloud deletion may have completed, but device cleanup is not confirmed. Keep this device private and retry. Contact private support to verify the account status before clearing site/app data. Clearing also removes other accounts’ local records and files; keep independent originals." />
+          <Button label="Retry device cleanup" onPress={() => { void finishCleanup(); }} />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
 
   if (session.configured && session.loading) {
     return (
@@ -371,7 +384,7 @@ export default function App() {
                     onDeleteAccount={async password => {
                       await store.suspend();
                       try { const result = await deleteCurrentAccount(password); if (result.localCleanupPending) setPurgeError(true); }
-                      finally { store.reload(); }
+                      finally { await finishCleanup(); store.reload(); }
                     }}
                     onRestoreBackup={store.restoreBackup}
                     onDeleteAll={() => void clearRecords()}

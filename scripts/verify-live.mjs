@@ -2,10 +2,10 @@
 // Two email-confirmed test users must already exist. Never use customer accounts.
 import { createClient } from '@supabase/supabase-js';
 import assert from 'node:assert/strict';
+import { stagingConfigured } from './release-config.mjs';
 const env=process.env;
-const required=['EXPO_PUBLIC_SUPABASE_URL','EXPO_PUBLIC_SUPABASE_ANON_KEY','PROOFPILOT_TEST_EMAIL_A','PROOFPILOT_TEST_PASSWORD_A','PROOFPILOT_TEST_EMAIL_B','PROOFPILOT_TEST_PASSWORD_B'];
-if (env.PROOFPILOT_ALLOW_STAGING_TESTS !== 'yes' || required.some(key=>!env[key])) {
- console.error('Not run: set PROOFPILOT_ALLOW_STAGING_TESTS=yes and all six documented staging test variables in your secure environment.');process.exit(2);
+if (!stagingConfigured(env)) {
+ console.error('Not run: explicitly identify PROOFPILOT_STAGING_PROJECT_REF, matching public Supabase URL/key, staging opt-in and two dedicated test accounts.');process.exit(2);
 }
 const make=()=>createClient(env.EXPO_PUBLIC_SUPABASE_URL,env.EXPO_PUBLIC_SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
 const a=make(),b=make();const record={id:`qa-${crypto.randomUUID()}`,name:'QA isolation test — safe to delete',price:0,purchaseDate:'2026-01-01',documents:[],deadlines:[]};

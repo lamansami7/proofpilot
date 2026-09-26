@@ -1,10 +1,11 @@
 import React from 'react';
+import { Linking } from 'react-native';
 import { act, create, ReactTestRenderer } from 'react-test-renderer';
 import { useSession } from '../hooks/useSession';
 let mockEvent: (event: string, session: unknown) => void;
 const mockAuth = {
   onAuthStateChange: jest.fn((callback) => { mockEvent = callback; return { data: { subscription: { unsubscribe: jest.fn() } } }; }),
-  getSession: jest.fn(), startAutoRefresh: jest.fn(), stopAutoRefresh: jest.fn(), signOut: jest.fn(),
+  getSession: jest.fn(), exchangeCodeForSession: jest.fn(), startAutoRefresh: jest.fn(), stopAutoRefresh: jest.fn(), signOut: jest.fn(),
 };
 jest.mock('../lib/supabase', () => ({ supabase: { get auth() { return mockAuth; } } }));
 let current: ReturnType<typeof useSession>;
@@ -40,4 +41,15 @@ test('recovery event activates password change instead of ordinary navigation', 
   act(() => mockEvent('PASSWORD_RECOVERY', { user: { id: 'owner' } }));
   expect(current.recovery).toBe(true);
   act(() => mockEvent('SIGNED_OUT', null)); expect(current.recovery).toBe(false);
+});
+
+test('late initial deep link cannot authenticate after the session hook unmounts', async () => {
+  let resolve!: (value: string) => void;
+  const initial = jest.spyOn(Linking, 'getInitialURL').mockReturnValue(new Promise(r => { resolve = r; }));
+  mockAuth.getSession.mockResolvedValue({ data: { session: null }, error: null });
+  await act(async () => { renderer = create(<Harness />); });
+  act(() => renderer.unmount());
+  await act(async () => { resolve('proofpilot://auth/callback?code=test-code'); });
+  expect(mockAuth.exchangeCodeForSession).not.toHaveBeenCalled();
+  initial.mockRestore();
 });

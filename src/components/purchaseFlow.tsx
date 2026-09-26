@@ -108,7 +108,7 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
     <Sheet visible={visible} onClose={() => { if (saveState !== 'saving') onClose(); }} wide eyebrow={editing ? 'EDIT RECORD' : 'NEW RECORD'} title={editing ? 'Edit purchase' : 'Protect a purchase'} subtitle={editing ? 'Keep this purchase record accurate and complete.' : 'Receipts, return windows, and warranties — one safe place.'}>
       {step === 'start' ? <StartStep onManual={() => setStep('form')} onScan={scanReceipt} onUpload={() => pickDocument('receipt')} upload={upload} /> : null}
       {step === 'form' ? (
-        <FormStep form={form} errors={errors} documents={documents} upload={upload} customDeadlines={customDeadlines} onCustomDeadlinesChange={setCustomDeadlines} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { if (validate()) setStep('review'); }} />
+        <FormStep form={form} errors={errors} documents={documents} upload={upload} customDeadlines={customDeadlines} onCustomDeadlinesChange={setCustomDeadlines} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { const valid = validate(); if (valid) setStep('review'); return valid; }} />
       ) : null}
       {step === 'review' ? <ReviewStep purchase={purchaseFromForm(form, documents, customDeadlines, initialPurchase ?? undefined)} onEdit={() => setStep('form')} onSave={save} saveState={saveState} /> : null}
       {step === 'success' && saved ? <SuccessStep purchase={saved} editing={editing} onDone={() => onDone(saved)} /> : null}
@@ -142,21 +142,25 @@ function Method({ icon, title, detail, onPress, state, disabled }: { icon: Feath
   );
 }
 
-function DateField({ label, value, error, onChange, hint, children }: { label: string; value: string; error?: string; onChange: (value: string) => void; hint?: string; children?: React.ReactNode }) {
+function DateField({ label, value, error, onChange, hint, children, inputRef }: { label: string; value: string; error?: string; onChange: (value: string) => void; hint?: string; children?: React.ReactNode; inputRef?: React.RefObject<TextInput> }) {
   const valid = value !== '' && isValidIsoDate(value);
   return (
     <View style={{ flex: 1 }}>
-      <Input label={label} value={value} onChangeText={onChange} placeholder="YYYY-MM-DD" error={error} hint={valid ? `→ ${formatDate(value)}` : hint} keyboardType="numbers-and-punctuation" autoCapitalize="none" />
+      <Input ref={inputRef} label={label} value={value} onChangeText={onChange} placeholder="YYYY-MM-DD" error={error} hint={valid ? `→ ${formatDate(value)}` : hint} keyboardType="numbers-and-punctuation" autoCapitalize="none" />
       {children ? <View style={styles.dateChips}>{children}</View> : null}
     </View>
   );
 }
 
-function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDeadlinesChange, update, onPickDocument, onRemoveDocument, merchantSuggestions, defaultReturnDays, onNext }: { form: Form; errors: Partial<Record<Field, string>>; documents: PurchaseDocument[]; upload: UploadState; customDeadlines: PurchaseDeadline[]; onCustomDeadlinesChange: (deadlines: PurchaseDeadline[]) => void; update: (field: Field, value: string) => void; onPickDocument: (kind: DocumentKind) => void; onRemoveDocument: (id: string) => void; merchantSuggestions: string[]; defaultReturnDays: number; onNext: () => void }) {
+function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDeadlinesChange, update, onPickDocument, onRemoveDocument, merchantSuggestions, defaultReturnDays, onNext }: { form: Form; errors: Partial<Record<Field, string>>; documents: PurchaseDocument[]; upload: UploadState; customDeadlines: PurchaseDeadline[]; onCustomDeadlinesChange: (deadlines: PurchaseDeadline[]) => void; update: (field: Field, value: string) => void; onPickDocument: (kind: DocumentKind) => void; onRemoveDocument: (id: string) => void; merchantSuggestions: string[]; defaultReturnDays: number; onNext: () => boolean }) {
   const [kindPickerOpen, setKindPickerOpen] = useState(false);
   const [deadlineTitle, setDeadlineTitle] = useState('');
   const [deadlineDate, setDeadlineDate] = useState('');
   const [deadlineType, setDeadlineType] = useState<Extract<DeadlineType, 'rebate' | 'custom'>>('custom');
+  const nameRef = React.useRef<TextInput>(null);
+  const purchaseDateRef = React.useRef<TextInput>(null);
+  const returnRef = React.useRef<TextInput>(null);
+  const warrantyRef = React.useRef<TextInput>(null);
   const merchantRef = React.useRef<TextInput>(null);
   const priceRef = React.useRef<TextInput>(null);
   const focusNext = (next: React.RefObject<TextInput | null>) => { try { next.current?.focus(); } catch { /* platform refused focus — keyboard stays put */ } };
@@ -166,7 +170,7 @@ function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDe
   return (
     <>
       <Text style={styles.stepHeading}>Purchase details</Text>
-      <Input label="PRODUCT NAME — REQUIRED" value={form.name} onChangeText={(value) => update('name', value)} placeholder="e.g. Samsung Smart Monitor M7" error={errors.name} returnKeyType="next" onSubmitEditing={() => focusNext(merchantRef)} blurOnSubmit={false} />
+      <Input ref={nameRef} label="PRODUCT NAME — REQUIRED" value={form.name} onChangeText={(value) => update('name', value)} placeholder="e.g. Samsung Smart Monitor M7" error={errors.name} returnKeyType="next" onSubmitEditing={() => focusNext(merchantRef)} blurOnSubmit={false} />
       <View style={{ height: spacing.md }} />
       <Input ref={merchantRef} label="MERCHANT — REQUIRED" value={form.merchant} onChangeText={(value) => update('merchant', value)} placeholder="e.g. Best Buy" error={errors.merchant} autoCapitalize="words" returnKeyType="next" onSubmitEditing={() => focusNext(priceRef)} blurOnSubmit={false} />
       {merchantSuggestions.length ? (
@@ -180,7 +184,7 @@ function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDe
           <Input ref={priceRef} label="PRICE — REQUIRED" accessibilityLabel="Purchase price" accessibilityHint="Enter 0 for free items, e.g. 0.00 shows as Free" value={form.price} onChangeText={(value) => update('price', value)} placeholder="0.00" prefix="$" keyboardType="decimal-pad" error={errors.price} hint={form.price && !errors.price && Number.isFinite(Number(form.price)) ? (Number(form.price) === 0 ? `Free — ${formatMoney(0)}` : formatMoney(Number(form.price))) : 'e.g. 49.99 · 0 is valid for gifts and warranties'} />
         </View>
         <View style={{ flex: 1.2, minWidth: 160 }}>
-          <DateField label="PURCHASE DATE — REQUIRED" value={form.purchaseDate} error={errors.purchaseDate} onChange={(value) => update('purchaseDate', value)}>
+          <DateField inputRef={purchaseDateRef} label="PURCHASE DATE — REQUIRED" value={form.purchaseDate} error={errors.purchaseDate} onChange={(value) => update('purchaseDate', value)}>
             <Chip label="Today" selected={form.purchaseDate === isoDate(new Date())} onPress={() => update('purchaseDate', isoDate(new Date()))} />
           </DateField>
         </View>
@@ -194,12 +198,12 @@ function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDe
       <Text style={styles.stepHeading}>Protection</Text>
       <Text style={[type.bodySmall, styles.sectionHint]}>Optional, but these dates power Deadline Radar and your claim drafts.</Text>
       <View style={styles.row}>
-        <DateField label="RETURN DEADLINE" value={form.returnDeadline} error={errors.returnDeadline} onChange={(value) => update('returnDeadline', value)} hint="Last day the merchant accepts returns">
+        <DateField inputRef={returnRef} label="RETURN DEADLINE" value={form.returnDeadline} error={errors.returnDeadline} onChange={(value) => update('returnDeadline', value)} hint="Last day the merchant accepts returns">
           <Chip label={`+${defaultReturnDays} days`} onPress={() => update('returnDeadline', isoDaysFrom(form.purchaseDate || null, defaultReturnDays))} />
           <Chip label="+15 days" onPress={() => update('returnDeadline', isoDaysFrom(form.purchaseDate || null, 15))} />
           {form.returnDeadline ? <Chip label="Clear" onPress={() => update('returnDeadline', '')} /> : null}
         </DateField>
-        <DateField label="WARRANTY EXPIRATION" value={form.warrantyEnd} error={errors.warrantyEnd} onChange={(value) => update('warrantyEnd', value)} hint="When manufacturer coverage ends">
+        <DateField inputRef={warrantyRef} label="WARRANTY EXPIRATION" value={form.warrantyEnd} error={errors.warrantyEnd} onChange={(value) => update('warrantyEnd', value)} hint="When manufacturer coverage ends">
           <Chip label="+1 year" onPress={() => update('warrantyEnd', isoDaysFrom(form.purchaseDate || null, 365))} />
           <Chip label="+2 years" onPress={() => update('warrantyEnd', isoDaysFrom(form.purchaseDate || null, 730))} />
           {form.warrantyEnd ? <Chip label="Clear" onPress={() => update('warrantyEnd', '')} /> : null}
@@ -257,7 +261,14 @@ function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDe
       </View>
 
       <View style={styles.footerActions}>
-        <Button label="Review purchase" icon="arrow-right" onPress={onNext} disabled={!savedDeadlinesValid} fullWidth />
+        <Button label="Review purchase" icon="arrow-right" onPress={() => {
+          if (onNext()) return;
+          const invalid = validatePurchaseFields(form);
+          const refs = { name: nameRef, merchant: merchantRef, price: priceRef, purchaseDate: purchaseDateRef, returnDeadline: returnRef, warrantyEnd: warrantyRef };
+          for (const field of Object.keys(refs) as Array<keyof typeof refs>) {
+            if (invalid[field]) { refs[field].current?.focus(); break; }
+          }
+        }} disabled={!savedDeadlinesValid} fullWidth />
       </View>
     </>
   );

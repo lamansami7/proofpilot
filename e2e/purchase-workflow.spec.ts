@@ -123,3 +123,30 @@ test('offline reload uses only the public shell cache and retains local purchase
   const cached=await page.evaluate(async()=>{const urls:string[]=[];for(const name of await caches.keys())for(const request of await(await caches.open(name)).keys())urls.push(request.url);return urls;});
   expect(cached.some(url=>/functions|purchase-question|claim-draft|export|access_token|code=/.test(url))).toBe(false);
 });
+
+for (const width of [320,375,768,1024,1440]) {
+  test(`empty, form validation and cleanup recovery states at ${width}px`,async({page},testInfo)=>{
+    await page.setViewportSize({width,height:900});
+    await page.goto('/'); await page.getByRole('button',{name:'Skip',exact:true}).click();
+    await page.getByRole('tab',{name:/Purchases/}).click();
+    await expect(page.getByText('No purchases yet',{exact:true})).toBeVisible();
+    await page.screenshot({path:testInfo.outputPath(`empty-${width}.png`)});
+    await page.getByRole('button',{name:'Protect a purchase',exact:true}).first().click();
+    await page.getByRole('button',{name:'Enter details manually'}).click();
+    await page.getByRole('button',{name:'Review purchase',exact:true}).click();
+    await expect(page.getByRole('textbox',{name:'PRODUCT NAME — REQUIRED',exact:true})).toBeFocused();
+    await expect(page.getByRole('textbox',{name:'PRODUCT NAME — REQUIRED',exact:true})).toBeInViewport();
+    expect((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
+    await page.screenshot({path:testInfo.outputPath(`form-error-${width}.png`)});
+    await page.keyboard.press('Escape');
+    await page.evaluate(()=>localStorage.setItem('proofpilot.v1.account-purge.qa',JSON.stringify({userId:'qa',confirmed:false,files:[]})));
+    await page.reload();
+    await expect(page.getByText('Device cleanup needs attention',{exact:true})).toBeVisible();
+    await expect(page.getByRole('tab')).toHaveCount(0);
+    await page.getByRole('button',{name:'Retry device cleanup'}).click();
+    await expect(page.getByText('Device cleanup needs attention',{exact:true})).toBeVisible();
+    expect((await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze()).violations).toEqual([]);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await page.screenshot({path:testInfo.outputPath(`cleanup-error-${width}.png`)});
+  });
+}

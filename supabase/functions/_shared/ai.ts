@@ -44,7 +44,15 @@ export function createAIHandler(deps: {
       const body = validateAIInput(await readJson(request),route);
       if (!await deps.reserve(identity.id)) throw new HttpError(429,'ai_limit_reached');
       const result = await deps.generate(route,body,AbortSignal.any([request.signal,AbortSignal.timeout(20000)]));
-      return json(validateAIOutput(result,route),200,headers);
+      const output = validateAIOutput(result,route);
+      const context = body.context as Record<string, unknown>;
+      // Facts are copied from validated user input, never authored by the model.
+      output.knownFacts = Object.entries(context).filter(([key]) => key !== 'documents')
+        .map(([key,value]) => `User-provided ${key}: ${String(value)}`);
+      const main = route === 'purchase-question' ? 'answer' : 'draft';
+      const warning = route === 'purchase-question' ? 'AI-GENERATED GUIDANCE — VERIFY BEFORE USING' : 'DRAFT — VERIFY BEFORE SENDING';
+      output[main] = `${warning}\n\n${output[main]}`;
+      return json(output,200,headers);
     } catch (error) {
       return json({ error: error instanceof HttpError ? error.code : 'service_unavailable' }, error instanceof HttpError ? error.status : 503,headers);
     }

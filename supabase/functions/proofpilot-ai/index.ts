@@ -1,6 +1,6 @@
 import { createAIHandler, AI_SYSTEM } from '../_shared/ai.ts';
 import { admin, allowedOrigins, authenticate } from '../_shared/runtime.ts';
-import { HttpError } from '../_shared/http.ts';
+import { HttpError, readJson } from '../_shared/http.ts';
 const key = Deno.env.get('OPENAI_API_KEY');
 const model = Deno.env.get('AI_MODEL');
 Deno.serve(createAIHandler({
@@ -18,8 +18,11 @@ Deno.serve(createAIHandler({
         messages:[{ role:'system',content:AI_SYSTEM },{ role:'user',content:JSON.stringify({ task:route,...body }) }] }),
     });
     if (!response.ok) throw new HttpError(503,'provider_unavailable');
-    const result = await response.json();
-    const text = result.choices?.[0]?.message?.content;
+    let result: Record<string, unknown>;
+    try { result = await readJson(response, 65536); }
+    catch { throw new HttpError(502,'invalid_provider_response'); }
+    const choices = result.choices as Array<{ message?: { content?: unknown } }> | undefined;
+    const text = choices?.[0]?.message?.content;
     if (typeof text !== 'string' || text.length > 16000) throw new HttpError(502,'invalid_provider_response');
     try { return JSON.parse(text); } catch { throw new HttpError(502,'invalid_provider_response'); }
   },
