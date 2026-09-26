@@ -23,7 +23,7 @@ describe('auth error mapping stays truthful', () => {
 
 describe('settings validation', () => {
   test('keeps a valid return window', () => {
-    expect(validateSettings({ defaultReturnWindowDays: 45, sampleBannerDismissed: true })).toEqual({ defaultReturnWindowDays: 45, sampleBannerDismissed: true });
+    expect(validateSettings({ defaultReturnWindowDays: 45, sampleBannerDismissed: true })).toEqual({ defaultReturnWindowDays: 45, sampleBannerDismissed: true, onboardingCompleted: false });
   });
 
   test.each([-1, 0, 366, 30.5, NaN, '30' as unknown as number])('falls back to 30 days for %s', (value) => {
@@ -31,8 +31,8 @@ describe('settings validation', () => {
   });
 
   test('rejects malformed stored settings without throwing', () => {
-    expect(validateSettings(null)).toEqual({ defaultReturnWindowDays: 30, sampleBannerDismissed: false });
-    expect(validateSettings('junk')).toEqual({ defaultReturnWindowDays: 30, sampleBannerDismissed: false });
-    expect(validateSettings({ defaultReturnWindowDays: 10, sampleBannerDismissed: 'yes' })).toEqual({ defaultReturnWindowDays: 10, sampleBannerDismissed: false });
+    expect(validateSettings(null)).toEqual({ defaultReturnWindowDays: 30, sampleBannerDismissed: false, onboardingCompleted: false });
+    expect(validateSettings('junk')).toEqual({ defaultReturnWindowDays: 30, sampleBannerDismissed: false, onboardingCompleted: false });
+    expect(validateSettings({ defaultReturnWindowDays: 10, sampleBannerDismissed: 'yes' })).toEqual({ defaultReturnWindowDays: 10, sampleBannerDismissed: false, onboardingCompleted: false });
   });
 });

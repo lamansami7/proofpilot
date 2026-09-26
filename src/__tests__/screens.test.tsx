@@ -131,7 +131,7 @@ describe('Vault', () => {
 
 describe('Settings', () => {
   const props = {
-    items, settings: { defaultReturnWindowDays: 30, sampleBannerDismissed: false },
+    items, settings: { defaultReturnWindowDays: 30, sampleBannerDismissed: false, onboardingCompleted: true },
     updateSettings: asyncNoop, userEmail: 'ada@example.com', configured: true,
     syncStatus: 'synced' as const, syncError: null, online: true,
     onSignOut: noop, onRestoreSamples: noop, onDeleteAll: noop, onNotify: noop,
