@@ -28,8 +28,8 @@ export function deriveProtection(input: { returnDeadline: string | null; warrant
   return input.hasReceipt ? 'protected' : 'attention';
 }
 
-export function deadlineStatus(date: string | null, now = new Date()): { days: number; status: DeadlineStatus } | null { if (!date) return null; const days = daysUntil(date, now); return { days, status: days < 0 ? 'overdue' : days === 0 ? 'today' : days <= 7 ? 'urgent' : days <= 31 ? 'upcoming' : 'later' }; }
-export function normalizedDeadlines(items: Purchase[], now = new Date()): NormalizedDeadline[] { return items.flatMap((purchase) => purchase.deadlines.map((deadline) => { const status = deadlineStatus(deadline.date, now); return { ...deadline, purchase, days: status!.days, status: status!.status }; })).sort((a, b) => a.days - b.days || a.purchase.name.localeCompare(b.purchase.name)); }
+export function deadlineStatus(date: string | null, now = new Date()): { days: number; status: DeadlineStatus } | null { if (!date) return null; const days = daysUntil(date, now); return { days, status: days < 0 ? 'overdue' : days === 0 ? 'today' : days <= 7 ? 'urgent' : days <= 30 ? 'upcoming' : 'later' }; }
+export function normalizedDeadlines(items: Purchase[], now = new Date()): NormalizedDeadline[] { return items.flatMap((purchase) => purchase.deadlines.filter((deadline) => isValidIsoDate(deadline.date)).map((deadline) => { const status = deadlineStatus(deadline.date, now); return { ...deadline, purchase, days: status!.days, status: status!.status }; })).sort((a, b) => a.days - b.days || a.purchase.name.localeCompare(b.purchase.name)); }
 export function deadlineGroup(deadline: NormalizedDeadline, now = new Date()): DeadlineGroup {
   if (deadline.status === 'overdue') return 'overdue';
   if (deadline.status === 'today') return 'today';
@@ -38,13 +38,13 @@ export function deadlineGroup(deadline: NormalizedDeadline, now = new Date()): D
   return target.getFullYear() === now.getFullYear() && target.getMonth() === now.getMonth() ? 'month' : 'later';
 }
 export function groupDeadlines(items: NormalizedDeadline[], now = new Date()): Record<DeadlineGroup, NormalizedDeadline[]> { return items.reduce<Record<DeadlineGroup, NormalizedDeadline[]>>((groups, item) => { groups[deadlineGroup(item, now)].push(item); return groups; }, { overdue: [], today: [], week: [], month: [], later: [] }); }
-export function protectedPurchaseCount(items: Purchase[]) { return items.filter((item) => item.protectionStatus !== 'unprotected').length; }
-export function protectedValue(items: Purchase[]) { return items.filter((item) => item.protectionStatus !== 'unprotected').reduce((total, item) => total + (item.price ?? 0), 0); }
-export function upcomingDeadlines(items: Purchase[], now = new Date()) { return normalizedDeadlines(items, now).filter((deadline) => deadline.days >= 0); }
-export function urgentDeadlines(items: Purchase[], now = new Date()) { return normalizedDeadlines(items, now).filter((deadline) => deadline.status === 'today' || deadline.status === 'urgent'); }
+export function protectedPurchaseCount(items: Purchase[]) { return items.filter((item) => deriveProtection(item) === 'protected').length; }
+export function protectedValue(items: Purchase[]) { return items.filter((item) => deriveProtection(item) === 'protected').reduce((total, item) => total + (item.price ?? 0), 0); }
+export function upcomingDeadlines(items: Purchase[], now = new Date()) { return normalizedDeadlines(items, now).filter((deadline) => !deadline.completed && deadline.days >= 0); }
+export function urgentDeadlines(items: Purchase[], now = new Date()) { return normalizedDeadlines(items, now).filter((deadline) => !deadline.completed && (deadline.status === 'today' || deadline.status === 'urgent')); }
 export function recentPurchases(items: Purchase[]) { return [...items].sort((a, b) => (b.purchaseDate ?? '').localeCompare(a.purchaseDate ?? '')); }
 export function nextDeadlineFor(purchase: Purchase, now = new Date()): NormalizedDeadline | null {
-  const live = purchase.deadlines.map((deadline) => { const status = deadlineStatus(deadline.date, now); return status ? { ...deadline, purchase, days: status.days, status: status.status } : null; }).filter((deadline): deadline is NormalizedDeadline => Boolean(deadline));
+  const live = purchase.deadlines.filter((deadline) => !deadline.completed).map((deadline) => { const status = deadlineStatus(deadline.date, now); return status ? { ...deadline, purchase, days: status.days, status: status.status } : null; }).filter((deadline): deadline is NormalizedDeadline => Boolean(deadline));
   return live.sort((a, b) => a.days - b.days)[0] ?? null;
 }
 
@@ -52,9 +52,9 @@ export type ProtectionSummary = { total: number; protected: number; attention: n
 export function protectionSummary(items: Purchase[]): ProtectionSummary {
   return {
     total: items.length,
-    protected: items.filter((item) => item.protectionStatus === 'protected').length,
-    attention: items.filter((item) => item.protectionStatus === 'attention').length,
-    unprotected: items.filter((item) => item.protectionStatus === 'unprotected').length,
+    protected: items.filter((item) => deriveProtection(item) === 'protected').length,
+    attention: items.filter((item) => deriveProtection(item) === 'attention').length,
+    unprotected: items.filter((item) => deriveProtection(item) === 'unprotected').length,
     missingReceipts: items.filter((item) => !item.hasReceipt).length,
     missingWarrantyInfo: items.filter((item) => !item.hasWarrantyInfo).length,
     valueProtected: protectedValue(items),
@@ -70,7 +70,7 @@ export function documentInventory(items: Purchase[]): DocumentInventory {
 }
 
 export function actionNeeded(items: Purchase[], now = new Date()): ActionNeeded[] {
-  const deadlines = normalizedDeadlines(items, now).filter((deadline) => deadline.status === 'overdue' || deadline.status === 'today' || deadline.status === 'urgent').map((deadline) => ({ id: deadline.id, kind: 'deadline' as const, purchase: deadline.purchase, title: deadlineTypeLabel(deadline.type), description: `${deadline.purchase.merchant} · ${formatDate(deadline.date)}`, actionLabel: 'Review', date: deadline.date }));
+  const deadlines = normalizedDeadlines(items, now).filter((deadline) => !deadline.completed && (deadline.status === 'overdue' || deadline.status === 'today' || deadline.status === 'urgent')).map((deadline) => ({ id: deadline.id, kind: 'deadline' as const, purchase: deadline.purchase, title: deadlineTypeLabel(deadline.type), description: `${deadline.purchase.merchant} · ${formatDate(deadline.date)}`, actionLabel: 'Review', date: deadline.date }));
   const missing: ActionNeeded[] = [];
   items.forEach((purchase) => {
     if (!purchase.hasReceipt) missing.push({ id: `receipt-${purchase.id}`, kind: 'missing_receipt', purchase, title: 'Receipt missing', description: `${purchase.merchant} · Add proof of purchase`, actionLabel: 'Add receipt' });

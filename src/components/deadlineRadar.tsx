@@ -18,19 +18,22 @@ const groupOrder: Array<{ id: DeadlineGroup; title: string; detail: string }> = 
   { id: 'later', title: 'Later', detail: 'Future deadlines' },
 ];
 const tone = (status: NormalizedDeadline['status']): BadgeTone => status === 'overdue' || status === 'today' ? 'danger' : status === 'urgent' ? 'warning' : 'success';
-const days = (deadline: NormalizedDeadline) => deadline.days < 0 ? `${Math.abs(deadline.days)} days overdue` : deadline.days === 0 ? 'Due today' : deadline.days === 1 ? '1 day remaining' : `${deadline.days} days remaining`;
+const days = (deadline: NormalizedDeadline) => deadline.completed ? 'Completed' : deadline.days < 0 ? `${Math.abs(deadline.days)} days overdue` : deadline.days === 0 ? 'Due today' : deadline.days === 1 ? '1 day remaining' : `${deadline.days} days remaining`;
 
-export function DeadlineRadar({ deadlines, onOpenPurchase, onAdd }: { deadlines: NormalizedDeadline[]; onOpenPurchase: (purchase: Purchase) => void; onAdd: () => void }) {
+export function DeadlineRadar({ deadlines, onOpenPurchase, onAdd, onUpdate }: { deadlines: NormalizedDeadline[]; onUpdate: (purchase: Purchase) => Promise<void>; onOpenPurchase: (purchase: Purchase) => void; onAdd: () => void }) {
+  const [completed, setCompleted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('urgency');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<NormalizedDeadline | null>(null);
 
   const filtered = useMemo(() => deadlines
-    .filter((deadline) => (filter === 'all' || deadline.type === filter) && `${deadline.purchase.name} ${deadline.purchase.merchant} ${deadlineTypeLabel(deadline.type)}`.toLowerCase().includes(query.toLowerCase()))
-    .sort((a, b) => sort === 'purchase' ? a.purchase.name.localeCompare(b.purchase.name) : sort === 'date' ? a.date.localeCompare(b.date) : a.days - b.days || a.purchase.name.localeCompare(b.purchase.name)), [deadlines, filter, query, sort]);
+    .filter((deadline) => Boolean(deadline.completed) === completed && (filter === 'all' || deadline.type === filter) && `${deadline.purchase.name} ${deadline.purchase.merchant} ${deadlineTypeLabel(deadline.type)}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => sort === 'purchase' ? a.purchase.name.localeCompare(b.purchase.name) : sort === 'date' ? a.date.localeCompare(b.date) : a.days - b.days || a.purchase.name.localeCompare(b.purchase.name)), [deadlines, filter, query, sort, completed]);
   const grouped = useMemo(() => groupDeadlines(filtered), [filtered]);
-  const counts = useMemo(() => groupDeadlines(deadlines), [deadlines]);
+  const counts = useMemo(() => groupDeadlines(deadlines.filter(d => !d.completed)), [deadlines]);
   const overdueCount = counts.overdue.length + counts.today.length;
 
   if (deadlines.length === 0) {
@@ -53,6 +56,7 @@ export function DeadlineRadar({ deadlines, onOpenPurchase, onAdd }: { deadlines:
       </View>
 
       <Card style={styles.controls}>
+        <View style={styles.sortRow}><Chip label="Active" selected={!completed} onPress={() => setCompleted(false)} /><Chip label={`Completed (${deadlines.filter(d => d.completed).length})`} selected={completed} onPress={() => setCompleted(true)} /></View>
         <Input accessibilityLabel="Search deadlines" value={query} onChangeText={setQuery} placeholder="Search product, merchant, or deadline type" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
           {filters.map(([value, label]) => <Chip key={value} label={label} selected={filter === value} onPress={() => setFilter(value)} />)}
@@ -67,16 +71,18 @@ export function DeadlineRadar({ deadlines, onOpenPurchase, onAdd }: { deadlines:
 
       {filtered.length === 0 ? (
         <EmptyState compact icon="search" title="No deadlines match" message="Try a different search or filter — your other deadlines are still being tracked." />
+      ) : completed ? (
+        <View style={styles.grid}>{filtered.map(deadline => <DeadlineCard key={`${deadline.purchase.id}-${deadline.id}`} deadline={deadline} onPress={() => { setSelected(deadline); setError(''); }} />)}</View>
       ) : (
         <View style={styles.groups}>
           {groupOrder.filter((group) => grouped[group.id].length > 0).map((group) => (
             <View key={group.id}>
               <View style={styles.groupHeader}>
-                <Text style={type.heading}>{group.title}</Text>
+                <Text style={type.heading}>{completed ? 'Completed · ' + group.title : group.title}</Text>
                 <Text style={type.bodySmall}>{group.detail} · {grouped[group.id].length}</Text>
               </View>
               <View style={styles.grid}>
-                {grouped[group.id].map((deadline) => <DeadlineCard key={deadline.id} deadline={deadline} onPress={() => setSelected(deadline)} />)}
+                {grouped[group.id].map((deadline) => <DeadlineCard key={deadline.id} deadline={deadline} onPress={() => { setSelected(deadline); setError(''); }} />)}
               </View>
             </View>
           ))}
@@ -104,6 +110,14 @@ export function DeadlineRadar({ deadlines, onOpenPurchase, onAdd }: { deadlines:
               <Feather name="bell-off" size={15} color={colors.inkSecondary} />
               <Text style={type.bodySmall}>Reminders are not connected in this build — nothing has been scheduled or sent. Track this date here until notifications are enabled.</Text>
             </View>
+            <Text style={[type.caption, { marginTop: spacing.md }]}>Completing a deadline removes it from action lists. It does not extend coverage or submit a claim.</Text>
+            {error ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>{error}</Text> : null}
+            <Button label={selected.completed ? 'Reopen deadline' : 'Mark completed'} icon={selected.completed ? 'rotate-ccw' : 'check'} loading={saving} onPress={async () => {
+              setSaving(true); setError('');
+              try { await onUpdate({ ...selected.purchase, deadlines: selected.purchase.deadlines.map(d => d.id === selected.id ? { ...d, completed: !selected.completed } : d) }); setSelected(null); }
+              catch { setError('Could not save. Your deadline has not changed. Try again.'); }
+              finally { setSaving(false); }
+            }} style={{ marginTop: spacing.md }} fullWidth />
             <Button label="Open purchase record" icon="arrow-right" onPress={() => { onOpenPurchase(selected.purchase); setSelected(null); }} style={{ marginTop: spacing.lg }} fullWidth />
           </>
         ) : null}

@@ -1,3 +1,4 @@
+import { contextFor, claimTemplate } from '../services/ai/purchaseContext';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -7,7 +8,7 @@ import { formatDate, formatMoney, isoDate } from '../lib/purchaseSelectors';
 import type { Purchase, PurchaseDocument } from '../types/purchase';
 import { Badge, Banner, Button, Card, Input } from './ui';
 
-function contextFor(p: Purchase): PurchaseContext { return { productName: p.name, merchant: p.merchant, purchaseDate: p.purchaseDate ?? undefined, price: p.price ?? undefined, returnDeadline: p.returnDeadline ?? undefined, warrantyEnd: p.warrantyEnd ?? undefined, warrantyProvider: p.warrantyProvider ?? undefined, serialNumber: p.serial ?? undefined, modelNumber: p.model ?? undefined, documents: p.documents.map((d) => d.name), notes: p.notes ?? undefined }; }
+
 function factsFor(p: Purchase, claimType: ClaimType): Array<[string, string]> {
   return [
     ['Product', p.name],
@@ -25,17 +26,19 @@ function missingFor(p: Purchase, claimType: ClaimType): string[] {
     claimType === 'return' && !p.returnDeadline ? 'return deadline or the merchant’s return policy' : '',
     claimType === 'warranty' && !p.warrantyEnd ? 'warranty expiration or terms' : '',
     claimType === 'warranty' && !p.warrantyProvider ? 'warranty provider' : '',
-    !p.documents.length ? 'receipt or proof of purchase' : '',
+    !p.documents.some(d => d.kind === 'receipt') ? 'receipt or proof of purchase' : '',
     claimType === 'warranty' && !p.serial ? 'serial number, if the provider requires it' : '',
   ].filter(Boolean);
 }
 
-export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIService() }: { purchase: Purchase; onSaveDraft?: (document: PurchaseDocument) => void; assistant?: AIService }) {
+export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIService() }: { purchase: Purchase; onSaveDraft?: (document: PurchaseDocument) => Promise<void>; assistant?: AIService }) {
   const [claimType, setClaimType] = useState<ClaimType>('return');
   const [issue, setIssue] = useState('');
   const [draft, setDraft] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'unavailable' | 'error' | 'ready'>('idle');
   const [extraMissing, setExtraMissing] = useState<string[]>([]);
+  const [vaultState, setVaultState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [source, setSource] = useState<'AI' | 'Template'>('Template');
   const [copied, setCopied] = useState(false);
 
   const facts = useMemo(() => factsFor(purchase, claimType), [purchase, claimType]);
@@ -43,7 +46,7 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
 
   const select = (next: ClaimType) => { setClaimType(next); setDraft(''); setExtraMissing([]); setStatus('idle'); };
   const generate = async () => {
-    setStatus('loading');
+    setStatus('loading'); setSource('AI');
     try {
       const result = await assistant.generateClaim(contextFor(purchase), claimType, issue.trim() || undefined);
       setDraft(result.draft); setExtraMissing(result.missingInformation); setStatus('ready');
@@ -66,20 +69,26 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2200); }
     } catch { /* clipboard unavailable */ }
   };
-  const saveToVault = () => {
+  const saveToVault = async () => {
     if (!onSaveDraft) return;
-    onSaveDraft({
+    setVaultState('saving');
+    try { await onSaveDraft({
       id: `claim-${Date.now()}`,
       name: `${claimType === 'return' ? 'Return' : 'Warranty'} claim draft — ${purchase.name} (${isoDate(new Date())})`,
       kind: 'claim',
       mimeType: 'text/plain',
       content: draft,
       addedAt: isoDate(new Date()),
-    });
+    }); setVaultState('saved'); } catch { setVaultState('error'); }
   };
 
   return (
     <Card style={styles.card}>
+      <Banner tone="info" icon="file-text" title="Drafts, never submissions" message="Saved facts are user-entered, not independently verified. Review every statement and policy before sending. No claim is submitted by ProofPilot." />
+      <Button variant="secondary" icon="file-text" label="Use saved-facts template (no AI)" onPress={() => { setDraft(claimTemplate(purchase, claimType, issue)); setSource('Template'); setStatus('ready'); setVaultState('idle'); }} style={{ marginVertical: spacing.md }} />
+      {draft ? <Text style={type.caption}>{source === 'AI' ? 'AI-generated draft · may contain errors' : 'Deterministic template · saved facts only'}</Text> : null}
+      {vaultState === 'error' ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>Draft could not be saved. Your text is still here; retry.</Text> : null}
+      {vaultState === 'saved' ? <Text accessibilityLiveRegion="polite" style={{ color: colors.success }}>Draft saved to Vault.</Text> : null}
       <View style={styles.heading}>
         <View style={styles.icon}><Feather name="file-text" size={18} color={colors.brandDark} /></View>
         <View style={styles.flex}>
@@ -96,7 +105,7 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
         ))}
       </View>
 
-      <Text style={styles.eyebrow}>VERIFIED PURCHASE FACTS</Text>
+      <Text style={styles.eyebrow}>SAVED PURCHASE FACTS</Text>
       <View style={styles.factGrid}>
         {facts.map(([label, value]) => (
           <View key={label} style={styles.fact}>
@@ -114,22 +123,22 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
             <Text style={type.bodySmall}>Check these before sending: {missing.join(' · ')}</Text>
           </View>
         </View>
-      ) : <Banner tone="success" icon="check-circle" title="Everything needed is on file" message="All the key facts for this claim are saved." />}
+      ) : <Banner tone="success" icon="check-circle" title="Core purchase fields are saved" message="The merchant or provider may still require more information." />}
 
-      {!assistant.isConfigured ? (
+      {!assistant.isConfigured && status !== 'ready' ? (
         <View style={{ marginTop: spacing.md }}>
-          <Banner tone="info" icon="lock" title="Draft generation needs the secure AI service" message="It is not configured in this build, and ProofPilot will not invent a draft. You can still copy the verified facts above into your own message." />
-          <Button label={copied ? 'Facts copied' : 'Copy verified facts'} icon={copied ? 'check' : 'copy'} variant="secondary" onPress={copyFacts} style={{ marginTop: spacing.md }} fullWidth />
+          <Banner tone="info" icon="lock" title="AI generation is not connected" message="Use the saved-facts template above, or copy these fields into your own message. Templates do not require AI." />
+          <Button label={copied ? 'Facts copied' : 'Copy saved facts'} icon={copied ? 'check' : 'copy'} variant="secondary" onPress={copyFacts} style={{ marginTop: spacing.md }} fullWidth />
         </View>
       ) : status === 'ready' ? (
         <View style={styles.draftBlock}>
-          <Badge label="AI-GENERATED DRAFT — REVIEW BEFORE SENDING" tone="warning" icon="alert-triangle" />
-          <TextInput accessibilityLabel="Editable claim draft" value={draft} onChangeText={setDraft} multiline textAlignVertical="top" style={styles.editor} />
+          <Badge label={`${source === 'AI' ? 'AI-GENERATED' : 'TEMPLATE'} DRAFT — REVIEW BEFORE SENDING`} tone="warning" icon="alert-triangle" />
+          <TextInput accessibilityLabel="Editable claim draft" value={draft} onChangeText={value => { setDraft(value); setVaultState('idle'); }} multiline textAlignVertical="top" style={styles.editor} />
           <View style={styles.actions}>
             <Button size="sm" label={copied ? 'Copied' : 'Copy draft'} icon={copied ? 'check' : 'copy'} variant="secondary" onPress={copy} />
             <Button size="sm" label="Share / export" icon="share" variant="secondary" onPress={share} />
-            {onSaveDraft ? <Button size="sm" label="Save to Vault" icon="archive" variant="secondary" onPress={saveToVault} /> : null}
-            <Button size="sm" label="Regenerate" icon="refresh-cw" variant="ghost" onPress={generate} />
+            {onSaveDraft ? <Button size="sm" label="Save to Vault" loading={vaultState === 'saving'} disabled={vaultState === 'saved'} icon="archive" variant="secondary" onPress={saveToVault} /> : null}
+            <Button size="sm" label="Regenerate" icon="refresh-cw" variant="ghost" onPress={generate} disabled={!assistant.isConfigured} />
           </View>
           <Text style={type.caption}>ProofPilot never sends this claim for you — review, edit, and send it yourself.</Text>
         </View>
@@ -139,7 +148,7 @@ export function ClaimGenerator({ purchase, onSaveDraft, assistant = createAIServ
           {status === 'loading' ? (
             <View accessibilityLiveRegion="polite" style={styles.status}>
               <ActivityIndicator size="small" color={colors.brandDark} />
-              <Text style={type.bodySmall}>Creating a draft using only the verified facts above…</Text>
+              <Text style={type.bodySmall}>Creating a draft using only the saved facts above…</Text>
             </View>
           ) : (
             <Button label={`Generate ${claimType} claim draft`} icon="file-text" onPress={generate} fullWidth />

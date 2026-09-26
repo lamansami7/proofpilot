@@ -13,6 +13,7 @@ export type PurchaseDeadline = {
   type: DeadlineType;
   date: string;
   title: string;
+  completed?: boolean;
 };
 
 export type PurchaseDocument = {

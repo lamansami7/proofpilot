@@ -19,7 +19,7 @@ function migrateDeadline(value: unknown, index: number): PurchaseDeadline | null
   const date = validDate(row.date);
   if (!date) return null;
   const type = deadlineTypes.includes(row.type as DeadlineType) ? row.type as DeadlineType : 'custom';
-  return { id: text(row.id, `deadline-${index}`), type, date, title: text(row.title, type === 'rebate' ? 'Rebate deadline' : 'Custom deadline') };
+  return { id: text(row.id, `deadline-${index}`), type, date, completed: row.completed === true, title: text(row.title, type === 'rebate' ? 'Rebate deadline' : 'Custom deadline') };
 }
 
 /** Defensive migration for persisted records from earlier app versions. */

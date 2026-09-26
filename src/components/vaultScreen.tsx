@@ -5,24 +5,35 @@ import { colors, spacing, type } from '../design/tokens';
 import { deriveProtection, documentInventory, formatDate, type IndexedDocument } from '../lib/purchaseSelectors';
 import type { FeatherIconName, Purchase } from '../types/purchase';
 import { deleteDocumentFile } from '../lib/documents';
-import { Badge, Banner, Button, Card, EmptyState, IconButton, Input } from './ui';
+import { Badge, Banner, Button, Card, Chip, EmptyState, IconButton, Input, Sheet } from './ui';
 import { DocumentViewer, type ViewableDocument } from './documentViewer';
 
-export function VaultScreen({ items, onAdd, onOpenPurchase, onUpdatePurchase }: { items: Purchase[]; onAdd: () => void; onOpenPurchase: (purchase: Purchase) => void; onUpdatePurchase: (purchase: Purchase) => void }) {
+export function VaultScreen({ items, onAdd, onOpenPurchase, onUpdatePurchase }: { items: Purchase[]; onAdd: () => void; onOpenPurchase: (purchase: Purchase) => void; onUpdatePurchase: (purchase: Purchase) => Promise<void> }) {
   const [viewing, setViewing] = useState<ViewableDocument | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<IndexedDocument | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [kind, setKind] = useState('all');
   const [query, setQuery] = useState('');
   const inventory = useMemo(() => documentInventory(items), [items]);
   const visible = useMemo(() => {
     const term = query.trim().toLocaleLowerCase();
-    const keep = (document: IndexedDocument) => !term || `${document.name} ${document.purchase.name} ${document.purchase.merchant} ${document.kind}`.toLocaleLowerCase().includes(term);
+    const keep = (document: IndexedDocument) => (kind === 'all' || document.kind === kind || (kind === 'manual' && document.kind === 'other')) && (!term || `${document.name} ${document.purchase.name} ${document.purchase.merchant} ${document.kind}`.toLocaleLowerCase().includes(term));
     return { receipts: inventory.receipts.filter(keep), warranty: inventory.warranty.filter(keep), product: inventory.product.filter(keep), claims: inventory.claims.filter(keep) };
-  }, [inventory, query]);
+  }, [inventory, query, kind]);
   const removeDocument = async (document: IndexedDocument) => {
-    await deleteDocumentFile(document).catch(() => undefined);
+    setBusy(true); setError('');
+    try {
     const documents = document.purchase.documents.filter((item) => item.id !== document.id);
     const hasReceipt = documents.some((item) => item.kind === 'receipt');
-    onUpdatePurchase({ ...document.purchase, documents, hasReceipt, protectionStatus: deriveProtection({ returnDeadline: document.purchase.returnDeadline, warrantyEnd: document.purchase.warrantyEnd, hasReceipt }) });
+    await onUpdatePurchase({ ...document.purchase, documents, hasReceipt, protectionStatus: deriveProtection({ returnDeadline: document.purchase.returnDeadline, warrantyEnd: document.purchase.warrantyEnd, hasReceipt }) });
     if (viewing?.id === document.id) setViewing(null);
+    // Commit the record before removing its file. A failed save never destroys evidence.
+    const shared = items.some(p => p.documents.some(d => d.uri && d.uri === document.uri && !(p.id === document.purchase.id && d.id === document.id)));
+    if (!shared) await deleteDocumentFile(document).catch(() => setError('Record removed; the unused file could not be cleaned up on this device.'));
+    setPendingDelete(null);
+    } catch { setError('Nothing was deleted. The record could not be saved. Please retry.'); }
+    finally { setBusy(false); }
   };
 
   if (items.length === 0) {
@@ -37,8 +48,13 @@ export function VaultScreen({ items, onAdd, onOpenPurchase, onUpdatePurchase }: 
   return (
     <>
       <VaultHeader />
-      <Banner tone="info" icon="hard-drive" title="Documents are stored on this device" message="Files stay in this app and are not uploaded anywhere in this build. Cloud storage activates when Supabase sync is configured." />
+      <Banner tone="info" icon="hard-drive" title="Documents are stored on this device" message="Files stay in this browser or app and are not uploaded. Signed-in accounts sync document details, not file contents. Clearing site or app data removes local files; keep your originals." />
       <View style={styles.search}><Input accessibilityLabel="Search documents" value={query} onChangeText={setQuery} placeholder="Search documents, purchases, or merchants" /></View>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg }}>
+        {[['all', 'All documents'], ['receipt', 'Receipts'], ['warranty', 'Warranties'], ['manual', 'Product documents'], ['claim', 'Claim drafts']].map(([value, label]) => <Chip key={value} label={label} selected={kind === value} onPress={() => setKind(value)} />)}
+      </View>
+      {error && !pendingDelete ? <Banner tone="warning" icon="alert-circle" title="Document storage" message={error} /> : null}
+      {query && !Object.values(visible).some(docs => docs.length) ? <EmptyState compact icon="search" title="No documents match" message="Try a different filename, purchase, or document type." actionLabel="Reset search and filters" onAction={() => { setQuery(''); setKind('all'); }} /> : null}
       <View style={styles.summary}>
         <VaultTile icon="credit-card" label="Receipts" value={inventory.receipts.length} />
         <VaultTile icon="shield" label="Warranty documents" value={inventory.warranty.length} />
@@ -46,11 +62,19 @@ export function VaultScreen({ items, onAdd, onOpenPurchase, onUpdatePurchase }: 
         <VaultTile icon="file-text" label="Claim drafts" value={inventory.claims.length} />
       </View>
 
-      <DocumentSection title="Receipts" detail="Proof of purchase — the backbone of every return and claim" documents={visible.receipts} empty="Attach a receipt from any purchase screen, or while adding a purchase." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={removeDocument} />
-      <DocumentSection title="Warranty documents" detail="Coverage terms and certificates" documents={visible.warranty} empty="Add a warranty document from a purchase’s record to keep coverage terms in reach." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={removeDocument} />
-      <DocumentSection title="Product documents" detail="Manuals, order confirmations, and anything else" documents={visible.product} empty="Product manuals and other files you attach will appear here." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={removeDocument} />
-      <DocumentSection title="Claim drafts" detail="Editable drafts created with the Claim generator" documents={visible.claims} empty="Generate a return or warranty draft from any purchase — saved drafts land here." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={removeDocument} />
+      {kind === 'all' || kind === 'receipt' ? <DocumentSection title="Receipts" detail="Proof of purchase — the backbone of every return and claim" documents={visible.receipts} empty="Attach a receipt from any purchase screen, or while adding a purchase." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={(document) => { setError(''); setPendingDelete(document); }} /> : null}
+      {kind === 'all' || kind === 'warranty' ? <DocumentSection title="Warranty documents" detail="Coverage terms and certificates" documents={visible.warranty} empty="Add a warranty document from a purchase’s record to keep coverage terms in reach." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={(document) => { setError(''); setPendingDelete(document); }} /> : null}
+      {kind === 'all' || kind === 'manual' ? <DocumentSection title="Product documents" detail="Manuals, order confirmations, and anything else" documents={visible.product} empty="Product manuals and other files you attach will appear here." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={(document) => { setError(''); setPendingDelete(document); }} /> : null}
+      {kind === 'all' || kind === 'claim' ? <DocumentSection title="Claim drafts" detail="Editable drafts created with the Claim generator" documents={visible.claims} empty="Generate a return or warranty draft from any purchase — saved drafts land here." onView={setViewing} onOpenPurchase={onOpenPurchase} onDelete={(document) => { setError(''); setPendingDelete(document); }} /> : null}
 
+      <Sheet visible={Boolean(pendingDelete)} onClose={() => { if (!busy) setPendingDelete(null); }} eyebrow="REMOVE DOCUMENT" title="Delete this document?" subtitle={pendingDelete?.name}>
+        <Text style={type.body}>This removes the document from its purchase and this device. Removing a receipt can change the purchase’s protection status. This cannot be undone.</Text>
+        {error ? <Text accessibilityRole="alert" style={{ color: colors.danger, marginTop: spacing.md }}>{error}</Text> : null}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.lg }}>
+          <Button variant="secondary" label="Keep document" disabled={busy} onPress={() => setPendingDelete(null)} />
+          <Button variant="danger" label="Delete document" loading={busy} onPress={() => { if (pendingDelete) void removeDocument(pendingDelete); }} />
+        </View>
+      </Sheet>
       <DocumentViewer document={viewing} onClose={() => setViewing(null)} />
     </>
   );

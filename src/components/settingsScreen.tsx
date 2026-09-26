@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Platform, Share, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, radius, spacing, type } from '../design/tokens';
@@ -13,7 +13,7 @@ import { Badge, Banner, Button, Card, Input } from './ui';
 type SettingsProps = {
   items: Purchase[];
   settings: AppSettings;
-  updateSettings: (patch: Partial<AppSettings>) => void;
+  updateSettings: (patch: Partial<AppSettings>) => Promise<void>;
   userEmail: string | null;
   configured: boolean;
   syncStatus: SyncStatus;
@@ -26,15 +26,19 @@ type SettingsProps = {
 
 export function SettingsScreen({ items, settings, updateSettings, userEmail, configured, syncStatus, syncError, onSignOut, onRestoreSamples, onDeleteAll, onNotify }: SettingsProps) {
   const [returnDays, setReturnDays] = useState(String(settings.defaultReturnWindowDays));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setReturnDays(String(settings.defaultReturnWindowDays)), [settings.defaultReturnWindowDays]);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const summary = protectionSummary(items);
   const ai = createAIService();
 
-  const saveReturnDays = () => {
+  const saveReturnDays = async () => {
     const parsed = Number(returnDays);
-    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 365) { onNotify('Return window must be between 1 and 365 days.'); return; }
-    updateSettings({ defaultReturnWindowDays: Math.round(parsed) });
-    onNotify(`Suggested return window saved: ${Math.round(parsed)} days.`);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 365) { onNotify('Return window must be between 1 and 365 days.'); return; }
+    setSaving(true);
+    try { await updateSettings({ defaultReturnWindowDays: parsed }); onNotify(`Suggested return window saved: ${parsed} days.`); }
+    catch { onNotify('Settings could not be saved. Try again.'); }
+    finally { setSaving(false); }
   };
 
   const exportData = async () => {
@@ -87,14 +91,14 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
           <View style={styles.returnRow}>
             <Input accessibilityLabel="Suggested return window in days" value={returnDays} onChangeText={setReturnDays} keyboardType="number-pad" containerStyle={{ width: 78 }} />
             <Text style={type.bodySmall}>days</Text>
-            <Button size="sm" variant="secondary" label="Save" onPress={saveReturnDays} />
+            <Button size="sm" variant="secondary" label="Save" loading={saving} onPress={saveReturnDays} />
           </View>
         </Card>
       </Section>
 
       <Section icon="cloud" title="Cloud sync" detail={cloudAvailable() ? 'Supabase connection detected' : 'Not configured'}>
         {cloudAvailable() ? (
-          <Banner tone={syncStatus === 'error' ? 'warning' : syncStatus === 'synced' ? 'success' : 'info'} icon={syncStatus === 'error' ? 'alert-circle' : syncStatus === 'synced' ? 'check-circle' : 'refresh-cw'} title={syncStatus === 'error' ? 'Cloud sync needs attention' : syncStatus === 'synced' ? 'Local and cloud records are synced' : 'Cloud sync is connecting'} message={syncError ?? 'Purchases are saved locally first, then synchronized to your private Supabase account.'} />
+          <Banner tone={syncStatus === 'error' ? 'warning' : syncStatus === 'synced' ? 'success' : 'info'} icon={syncStatus === 'error' ? 'alert-circle' : syncStatus === 'synced' ? 'check-circle' : 'refresh-cw'} title={syncStatus === 'error' ? 'Cloud sync needs attention' : syncStatus === 'synced' ? 'Cloud check finished · no pending uploads' : 'Cloud sync is connecting'} message={syncError ?? 'Purchases are saved locally first, then synchronized to your private Supabase account.'} />
         ) : (
           <Banner tone="info" icon="cloud-off" title="Cloud sync is off" message="Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then run the migration in /supabase. Until then, everything you add is saved on this device only." />
         )}
@@ -126,9 +130,9 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
           <View style={styles.dataRow}>
             <View style={{ flex: 1 }}>
               <Text style={type.label}>Restore sample data</Text>
-              <Text style={type.bodySmall}>Replace the current record with the three sample purchases.</Text>
+              <Text style={type.bodySmall}>Add missing sample purchases without replacing your own records.</Text>
             </View>
-            <Button size="sm" variant="secondary" icon="refresh-cw" label="Restore" onPress={() => { onRestoreSamples(); onNotify('Sample data restored.'); }} />
+            <Button size="sm" variant="secondary" icon="refresh-cw" label="Restore" onPress={onRestoreSamples} />
           </View>
           <View style={styles.dataRow}>
             <View style={{ flex: 1 }}>

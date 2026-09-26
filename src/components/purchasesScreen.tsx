@@ -1,22 +1,23 @@
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { spacing, type } from '../design/tokens';
-import { formatMoney } from '../lib/purchaseSelectors';
+import { deriveProtection, formatMoney, nextDeadlineFor } from '../lib/purchaseSelectors';
 import type { Purchase } from '../types/purchase';
 import { Button, Card, Chip, EmptyState } from './ui';
 import { PurchaseCard } from './purchaseComponents';
 
-type Sort = 'recent' | 'name' | 'price';
+type Sort = 'recent' | 'name' | 'price' | 'deadline';
 
 export function PurchasesScreen({ items, total, query, onAdd, onOpen }: { items: Purchase[]; total: number; query: string; onAdd: () => void; onOpen: (purchase: Purchase) => void }) {
+  const [protection, setProtection] = useState('all');
   const [sort, setSort] = useState<Sort>('recent');
   const [category, setCategory] = useState<string | null>(null);
 
   const categories = useMemo(() => Array.from(new Set(items.map((item) => item.category))).sort(), [items]);
   const visible = useMemo(() => {
     const inCategory = category ? items.filter((item) => item.category === category) : items;
-    return [...inCategory].sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name) : sort === 'price' ? (b.price ?? -1) - (a.price ?? -1) : (b.purchaseDate ?? '').localeCompare(a.purchaseDate ?? ''));
-  }, [items, sort, category]);
+    return inCategory.filter(item => protection === 'all' || deriveProtection(item) === protection).sort((a, b) => sort === 'deadline' ? (nextDeadlineFor(a)?.days ?? Infinity) - (nextDeadlineFor(b)?.days ?? Infinity) : sort === 'name' ? a.name.localeCompare(b.name) : sort === 'price' ? (b.price ?? -1) - (a.price ?? -1) : (b.purchaseDate ?? '').localeCompare(a.purchaseDate ?? ''));
+  }, [items, sort, category, protection]);
   const totalValue = useMemo(() => visible.reduce((sum, item) => sum + (item.price ?? 0), 0), [visible]);
 
   return (
@@ -41,10 +42,15 @@ export function PurchasesScreen({ items, total, query, onAdd, onOpen }: { items:
                 <Text style={type.caption}>Sort</Text>
                 <Chip label="Recent" selected={sort === 'recent'} onPress={() => setSort('recent')} />
                 <Chip label="Name" selected={sort === 'name'} onPress={() => setSort('name')} />
+                <Chip label="Next deadline" selected={sort === 'deadline'} onPress={() => setSort('deadline')} />
                 <Chip label="Price" selected={sort === 'price'} onPress={() => setSort('price')} />
               </View>
             </View>
-            {categories.length > 1 ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+              {[['all', 'All protection'], ['protected', 'Actively protected'], ['attention', 'Missing receipt'], ['unprotected', 'No active window']].map(([value, label]) => <Chip key={value} label={label} selected={protection === value} onPress={() => setProtection(value)} />)}
+              {category || protection !== 'all' ? <Button size="sm" variant="ghost" label="Reset filters" onPress={() => { setCategory(null); setProtection('all'); }} /> : null}
+            </View>
+            {categories.length > 1 || category ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryRow}>
                 <Chip label="All categories" selected={!category} onPress={() => setCategory(null)} />
                 {categories.map((item) => <Chip key={item} label={item} selected={category === item} onPress={() => setCategory(category === item ? null : item)} />)}
