@@ -144,7 +144,7 @@ describe('Settings', () => {
     expect(hasText(renderer, 'Sign out')).toBe(true);
     expect(hasText(renderer, 'Delete all purchases')).toBe(true);
     expect(hasText(renderer, 'Support')).toBe(true);
-    expect(hasText(renderer, '2.0.0')).toBe(true);
+    expect(hasText(renderer, '1.0.0')).toBe(true);
   });
 
   test('reports offline honestly', () => {

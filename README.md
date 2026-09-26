@@ -84,10 +84,12 @@ There is no automatic import of guest data into an account, preventing accidenta
 uploads. Export guest records before configuring cloud if you need a separate backup. JSON
 exports include record metadata and file references, **not** binary document backups.
 
-## Version 2.0.0 upgrade
+## Pre-launch product polish — toward 1.0.0
 
 The Expo / React Native architecture, Supabase foundation, and local-first behavior are
-unchanged. This release focuses on product depth, honesty, and regression safety:
+unchanged. This pre-launch work focuses on product depth, honesty, and regression safety
+(treated internally as iterative polish toward the first public release):
+
 
 - **Dashboard** — every metric now comes from stored records only: total purchases, protected,
   need attention, upcoming deadlines, expiring warranties (30 days), missing receipts, and
@@ -117,10 +119,10 @@ unchanged. This release focuses on product depth, honesty, and regression safety
   bulk-replace semantics; the shell memoizes derived state.
 - **Accessibility** — removed nested interactive controls in attention rows, added labels to
   new interactive surfaces, and kept touch targets ≥ 44px.
-- **Version 2.0.0** is declared once in `src/design/tokens.ts` (`APP_VERSION`) and mirrored in
-  `package.json` / `app.json`.
+- **Version 1.0.0** is declared once in `src/design/tokens.ts` (`APP_VERSION`) and mirrored in
+  `package.json` / `app.json` — the first public release will be 1.0.0. Internal polish does not bump the public major version.
 
-No new Supabase migration is required for 2.0: pinning and all record edits travel inside the
+No new Supabase migration is required for this polish: pinning and all record edits travel inside the
 existing `record_data` JSONB column via `save_purchase_record`. Both migrations in
 `supabase/migrations` must still be applied for cloud sync to work at all.
 
@@ -152,3 +154,12 @@ migrations.
   when absent, ProofPilot explains that and offers deterministic templates.
 - Cross-device edits resolve by last successful server write — not collaborative merging.
 - Modal focus is not keyboard-trapped on web; Escape and backdrop dismissal work.
+
+## Versioning philosophy
+
+ProofPilot has not yet had a public launch. The public product version is **1.0.0**.
+
+- Before public launch, we make large internal improvements (design, UX, architecture, reliability, accessibility, performance, tests) and treat them as pre-launch polish — the code evolves, the customer still sees **1.0**.
+- The first time someone downloads ProofPilot they will see **ProofPilot 1.0** — mature and polished because we did the work before launch, not because we rushed version numbers.
+- After launch we use gradual semantic versioning: `1.0.0` first public release, `1.0.1`/`1.0.2` bug fixes, `1.1.0` meaningful feature, `1.2.0` next feature, `2.0.0` only for a genuinely major product transformation.
+- Internal development milestones (commits, redesigns, refactor passes) are not exposed as public major versions.

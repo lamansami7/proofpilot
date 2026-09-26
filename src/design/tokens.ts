@@ -1,7 +1,7 @@
 import type { TextStyle, ViewStyle } from 'react-native';
 
 /**
- * ProofPilot V3 — premium, calm, trustworthy design system.
+ * ProofPilot — premium, calm, trustworthy design system.
  * Semantic tokens ensure accessible contrast and consistent intent.
  * Backwards-compatible: legacy keys remain as aliases.
  */
@@ -95,7 +95,7 @@ export const radius = {
   xl: 22,
   modal: 22,
   pill: 999,
-  // aliases for V3 brief
+  // backwards-compatible aliases
   small: 8,
   medium: 12,
   large: 16,
@@ -148,7 +148,7 @@ export const type: Record<'display' | 'title' | 'heading' | 'subheading' | 'body
   label: { fontSize: 13, lineHeight: 17, fontWeight: '700', color: colors.ink },
   caption: { fontSize: 11.5, lineHeight: 16, color: colors.muted },
   eyebrow: { fontSize: 11, lineHeight: 15, fontWeight: '800', letterSpacing: 1.15, color: colors.muted },
-  // V3 aliases
+  // aliases for page/section/card titles
   pageTitle: { fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: -0.9, color: colors.ink },
   sectionTitle: { fontSize: 16, lineHeight: 22, fontWeight: '800', letterSpacing: -0.25, color: colors.ink },
   cardTitle: { fontSize: 15, lineHeight: 20, fontWeight: '800', letterSpacing: -0.2, color: colors.ink },
@@ -177,5 +177,5 @@ export const focusRing: ViewStyle = {
   outlineOffset: 2,
 } as unknown as ViewStyle;
 
-/** Keep in sync with package.json and app.json (expo.version). */
-export const APP_VERSION = '2.0.0';
+/** Keep in sync with package.json and app.json (expo.version). Public launch is 1.0.0 — pre-launch polish stays internal. */
+export const APP_VERSION = '1.0.0';
