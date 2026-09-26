@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
   sortRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'center' },
   groups: { gap: spacing.xl },
   group: { gap: spacing.md },
-  groupHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  groupHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flexWrap: 'wrap' },
   groupIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
   groupIconDanger: { backgroundColor: colors.dangerSurface, borderColor: colors.dangerBorder },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },

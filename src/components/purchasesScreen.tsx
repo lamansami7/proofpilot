@@ -175,9 +175,10 @@ export function PurchasesScreen({
                     variant="secondary"
                     icon="chevrons-down"
                     label={`Show ${Math.min(PAGE_SIZE, visible.length - limit)} more of ${visible.length - limit} remaining`}
+                    accessibilityLabel={`Show ${Math.min(PAGE_SIZE, visible.length - limit)} more purchases, ${visible.length - limit} remaining`}
                     onPress={() => setLimit((v) => v + PAGE_SIZE)}
                   />
-                  <Text style={type.caption}>Large lists stay fast — incremental rendering with one press.</Text>
+                  <Text style={[type.caption, { textAlign: 'center' }]}>Large lists stay fast — incremental rendering keeps navigation responsive.</Text>
                 </View>
               ) : null}
               {visible.length > 6 ? (

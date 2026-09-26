@@ -303,7 +303,7 @@ function DocumentSection({
 
 const styles = StyleSheet.create({
   toolbar: { gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.md },
-  searchWrap: { maxWidth: 560 },
+  searchWrap: { maxWidth: 560, width: '100%', alignSelf: 'flex-start' },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   summary: { flexDirection: 'row', gap: spacing.md, marginVertical: spacing.lg, flexWrap: 'wrap' },
   tile: { flex: 1, minWidth: 140, padding: spacing.lg, gap: 3, alignItems: 'flex-start' },

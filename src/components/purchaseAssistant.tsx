@@ -184,6 +184,6 @@ const styles = StyleSheet.create({
   userText: { ...type.body, color: colors.surface, fontWeight: '700' },
   generated: { ...type.eyebrow, fontSize: 9, marginBottom: 4 },
   status: { minHeight: 42, marginTop: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  composer: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, alignItems: 'center' },
+  composer: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, alignItems: 'center', flexWrap: 'wrap' },
   pressed: { opacity: 0.74 },
 });

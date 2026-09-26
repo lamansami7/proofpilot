@@ -176,7 +176,7 @@ function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDe
       <View style={{ height: spacing.md }} />
       <View style={styles.row}>
         <View style={{ flex: 1 }}>
-          <Input ref={priceRef} label="PRICE — REQUIRED" value={form.price} onChangeText={(value) => update('price', value)} placeholder="0.00" prefix="$" keyboardType="decimal-pad" error={errors.price} hint={form.price && !errors.price && Number.isFinite(Number(form.price)) ? formatMoney(Number(form.price)) : undefined} />
+          <Input ref={priceRef} label="PRICE — REQUIRED" value={form.price} onChangeText={(value) => update('price', value)} placeholder="0.00" prefix="$" keyboardType="decimal-pad" error={errors.price} hint={form.price && !errors.price && Number.isFinite(Number(form.price)) ? (Number(form.price) === 0 ? `Free — ${formatMoney(0)}` : formatMoney(Number(form.price))) : undefined} />
         </View>
         <View style={{ flex: 1.2 }}>
           <DateField label="PURCHASE DATE — REQUIRED" value={form.purchaseDate} error={errors.purchaseDate} onChange={(value) => update('purchaseDate', value)}>

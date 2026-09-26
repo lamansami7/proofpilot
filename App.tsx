@@ -639,6 +639,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRightWidth: 1,
     borderRightColor: colors.border,
+    ...shadows.card,
   },
   brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm },
   logo: {

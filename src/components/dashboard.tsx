@@ -175,8 +175,8 @@ export function Dashboard(props: DashboardProps) {
             </View>
           </View>
 
-          {/* Metrics */}
-          <View style={styles.metrics}>
+          {/* Metrics — protection at a glance, calm hierarchy */}
+          <View style={[styles.metrics, isPhone && styles.metricsPhone]}>
             <Metric
               icon="shopping-bag"
               value={summary.total}
@@ -544,6 +544,7 @@ const styles = StyleSheet.create({
   heroMetaValue: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
   heroMetaLabel: { color: '#BECEC6', fontSize: 10, letterSpacing: 0.5, fontWeight: '600' },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.lg },
+  metricsPhone: { gap: spacing.sm },
   metric: { flex: 1, flexBasis: 180, padding: spacing.lg, minWidth: 0, gap: spacing.sm },
   metricIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center' },
   statStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginVertical: spacing.lg },
