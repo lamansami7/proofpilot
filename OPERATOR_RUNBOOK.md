@@ -30,7 +30,7 @@ Required privately: Supabase CLI login/access, project reference, database passw
 
 ```sh
 supabase login
-supabase link --project-ref "$SUPABASE_PROJECT_REF"
+supabase link --project-ref "$PROOFPILOT_STAGING_PROJECT_REF"
 supabase migration list
 supabase db push --dry-run
 supabase db push
@@ -111,3 +111,31 @@ The gate validates public URL/key types, native/EAS identifiers and approval pre
 - **REQUIRES HUMAN/LEGAL DECISION:** approve and exercise the private deletion-support procedure, policy/contact, retention and store disclosures; record LEGAL approval only after completing review.
 
 AI responses now label supplied context as user-provided; the model cannot supply the returned fact list. Generated answer/draft prose still requires human verification and must not be presented as verified extraction or guaranteed factual output. Provider response reading is capped at 64 KiB and five seconds, within the overall upstream timeout. Leave AI disabled until live quota, cancellation and provider-failure tests pass.
+
+
+## Supabase staging configuration boundary (inspection at 82dfa80)
+
+**REQUIRES CONFIGURATION:** no staging reference, URL, public key, opt-in or either QA credential pair is available in the inspected environment or conventional local env files. No CLI project link exists; the Supabase CLI is not on PATH. No remote request or deployment was made. `supabase/config.toml` describes local development; its project_id and localhost Auth URLs do not identify or configure a hosted staging project.
+
+### Operator setup — before any deployment
+
+1. Create a separate, empty Supabase project for ProofPilot staging. Do not reuse production. Record its actual project reference and region. Confirm explicitly that this is the disposable QA project.
+2. Configure public `PROOFPILOT_STAGING_PROJECT_REF`, `EXPO_PUBLIC_SUPABASE_URL=https://<actual-reference>.supabase.co`, and `EXPO_PUBLIC_SUPABASE_ANON_KEY` (publishable or legacy anon key from that SAME project). Reference and URL must match exactly. The reference format is checked by the current script. A format check is not proof of ownership.
+3. Install a supported Supabase CLI using Supabase's installation instructions. Authenticate with `supabase login` privately, or inject SUPABASE_ACCESS_TOKEN via a secure process environment. Supply the project's database password through the CLI's private prompt when required. Never put those secrets in Expo variables, source, logs or chat. Verify the CLI link against the intended staging project before `migration list`, dry-run, push or function deployment. Do not run the earlier deployment commands until this check is complete.
+4. Choose the actual HTTPS staging app origin. In hosted Auth URL Configuration set Site URL to that origin and allow the exact origin plus `proofpilot://auth/callback` for installed native QA builds. Do not use wildcard redirects. Enable email/password authentication, email confirmation and minimum password length of at least eight. Configure your SMTP host/port, private username/password, verified sender and DNS records. Disable mail-provider link tracking if it rewrites Auth links. QA must be able to open real confirmation/recovery mail in the same browser/device that initiated PKCE.
+5. Create two separate QA-only users A/B with controlled inboxes; confirm them. Inject the four PROOFPILOT_TEST_EMAIL_A / PASSWORD_A / EMAIL_B / PASSWORD_B variables privately into the test process. Set PROOFPILOT_ALLOW_STAGING_TESTS=yes only after confirming the project. Use additional disposable users for account-deletion trials so A/B remain available for isolation tests; do not use your personal account. No extra deletion-user variable names are implemented yet.
+6. Deploy all four migrations in order using migration history, not dashboard SQL edits. The migrations create the **private** purchase-documents bucket: 20 MiB limit, PDF/JPEG/PNG only; object paths are `<authenticated-user-id>/<QA-file-name>`. Do not add public bucket access or permissive RLS policies. Existing app attachments remain device-local; testing this bucket directly does not establish cloud attachment backup. Upload/update restrictions must be tested with ordinary user sessions, not service-role access.
+7. In staging Edge Function Secrets set ALLOWED_ORIGINS to the exact HTTPS staging app origin (comma-separated if multiple), and AI_ENABLED=false. Leave AI_MODEL/OPENAI_API_KEY unset and the public AI endpoint blank until a provider is deliberately configured. Hosted Supabase supplies SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY inside the functions; never copy the privileged key into the app. Deploy delete-account and proofpilot-ai to the explicitly linked staging project. Keep the repository's handler JWT verification: verify_jwt=false disables the legacy gateway check, not application authentication.
+8. Keep EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED=false for ordinary builds. Enable it only in the isolated staging QA build once the deletion function is deployed and the disposable-account destructive test is explicitly approved. Production remains disabled until acceptance. Do not set release approval variables merely to bypass the gate.
+
+The existing `npm run test:live` reads **process environment variables**; unlike Expo it does not automatically load .env files. Inject them with private tooling. No real values are required in tracked files. Non-secret project reference/URL/public key may be shared if needed, but do not send QA passwords, access tokens, database/SMTP passwords, service-role keys or provider secrets in chat.
+
+### Live validation scope after setup
+
+The existing script covers A/B sign-in, purchase creation/retrieval, cross-user read/write denial, idempotency and tombstone stale-save rejection. It does **not** constitute the full requested acceptance suite: sign-out errors are not asserted; SMTP/recovery, Storage object operations, account deletion and response loss, deployed AI, reconnection and actual multi-device behavior need separately recorded tests. No live result may be inferred from the local suites.
+
+For the lost-confirmation test, seed a disposable user's records and owned Storage objects, initiate password-confirmed deletion from the app, and deliberately discard the completed server response at the client. Independently verify Auth absence, database cascades and Storage absence through privileged operator tooling. Restart the app: its marker must still be unconfirmed, records must not hydrate/sync, and no deletion success may be shown. **Current implementation cannot automatically confirm that state or execute a confirmed purge from it.** Do not mark the ledger confirmed manually as a test workaround, and do not treat failed sign-in as deletion proof. Recovery requires a reviewed implementation or an approved, tested private-support procedure; this remains a launch blocker even if remote deletion itself is verified.
+
+With AI disabled, a 503 ai_unavailable only verifies disabled behavior: it does not prove deployed authentication/quota paths ran. Provider-enabled tests require server-only credentials/budget approval and separately recorded authentication, limits, malformed/oversized output, failures and timeouts. Fault injection results must be labeled as such, not as organic provider behavior.
+
+Classification: **VERIFIED LIVE:** none. **VERIFIED LOCALLY:** source/configuration inspection and separately recorded local suites. **REQUIRES CONFIGURATION:** project, public settings, CLI access, QA users and staging origin. **REQUIRES EXTERNAL SERVICE:** SMTP/Auth/Storage/Edge/provider tests. **REQUIRES REAL DEVICE:** installed-app recovery and two-device lifecycle/conflicts. **REQUIRES HUMAN/LEGAL DECISION:** region/retention, destructive QA approval, private deletion support and provider data handling.

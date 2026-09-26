@@ -115,3 +115,21 @@ Public build variables: EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY,
 Final local regression: 260 Jest tests / 21 suites; 26 migration assertions; 18 Deno tests; 9 release-config tests; 5 tooling checks; 24 browser tests. Strict TypeScript, web/offline export, all-platform Hermes/JS export, repeated Android/iOS prebuild and npm audit (zero findings) passed. No lint/formatter script is configured; `git diff --check` is the whitespace check, not a claimed linter. Previous clean-install evidence remains from the baseline; dependencies were not changed in this continuation. Test scripts/configuration changed only.
 
 **Status separation:** VERIFIED means the local evidence above only. REQUIRES CONFIGURATION covers identified staging/EAS/public values. REQUIRES EXTERNAL SERVICE covers live Auth/SMTP/Storage/provider and conflict tests. REQUIRES REAL DEVICE covers Android/iOS runtime and accessibility. REQUIRES HUMAN/LEGAL DECISION covers policy, retention, support, store disclosures and acceptance of deletion recovery. The lost-confirmation recovery path remains NOT SAFE TO SHIP without an approved, tested resolution. No migrations were applied remotely, no store submission occurred, and PR #9 is not authorized to merge.
+
+
+## Supabase staging phase — stopped at configuration boundary
+
+Inspection began from clean branch `arena/01a0dd28-proofpilot`, commit `82dfa80`. Reviewed all four migrations/RLS/Storage definitions, Auth configuration/client recovery, both Edge Functions and shared controls, environment validation and the staging script. Required staging reference/URL/public key, QA credential pairs and opt-in are absent in the inspected environment/conventional env files. CLI link is absent and Supabase CLI is not on PATH. No unidentified project was contacted and no remote migration/function deployment was attempted.
+
+- **VERIFIED LIVE:** none; all 16 requested live acceptance areas remain unverified.
+- **VERIFIED LOCALLY:** configuration boundary inspection; local regression results remain separate from hosted behavior.
+- **REQUIRES CONFIGURATION:** a confirmed dedicated staging project with exactly matching reference/URL, public client key, privately authenticated CLI, controlled QA users, staging HTTPS origin and Auth redirects. Runbook now supplies the explicit operator checklist and clarifies that test:live requires injected process variables.
+- **REQUIRES EXTERNAL SERVICE:** actual migrations/grants/RLS, Auth/SMTP/recovery, Storage objects/cleanup, Edge Functions, network reconnection and hosted sync conflicts. The existing live script is only a subset, not a complete launch test. AI stays disabled without provider configuration.
+- **REQUIRES REAL DEVICE:** signed installed-app PKCE recovery, offline/lifecycle and two-device behavior.
+- **REQUIRES HUMAN/LEGAL DECISION:** region/retention, deletion-support approval, provider data handling and destructive QA authorization.
+
+Lost-response review confirms the architecture limitation: a server success without client confirmation leaves `confirmed:false`. Restart blocks hydration/sync and does NOT run a confirmed local purge or infer remote success. Independent operator verification of Auth/database/Storage state can establish remote deletion, but does not itself implement automatic client recovery. Never manually flip the marker or use failed sign-in as proof. This remains a release blocker; the exact staging failure-injection procedure is in OPERATOR_RUNBOOK.md.
+
+No application/migration/function code changed in this phase. PR #9 remains draft/unmerged; no store submission or production-readiness claim is authorized.
+
+Local regression rerun for this staging-boundary handoff: **260 unit tests / 21 suites, 26 migration assertions, 18 backend/HTTP tests, 9 configuration tests, 5 tooling checks and 24 browser workflows passed**. Strict TypeScript, both Edge entrypoint checks, production web/offline export and Android/iOS bundle exports passed. `npm audit` reported zero vulnerabilities; `git diff --check` passed. Targeted current tracked-source scanning found no matching private-key/provider/GitHub-secret patterns and zero tracked populated environment files; this is not a historical secret audit. None of these results is VERIFIED LIVE.
