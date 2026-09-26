@@ -1,8 +1,8 @@
-import { contextFor, claimTemplate } from '../services/ai/purchaseContext';
+import { contextFor } from '../services/ai/purchaseContext';
 import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { createAIService, type AIService, type PurchaseAnswer, type PurchaseContext } from '../services/ai/AIService';
+import { createAIService, type AIService, type PurchaseAnswer } from '../services/ai/AIService';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { formatDate } from '../lib/purchaseSelectors';
 import type { Purchase } from '../types/purchase';
@@ -41,12 +41,14 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState('');
   const [state, setState] = useState<'idle' | 'loading' | 'unavailable' | 'error'>('idle');
+  const [lastQuestion, setLastQuestion] = useState('');
   const known = useMemo(() => knownFacts(purchase), [purchase]);
   const missing = useMemo(() => missingFacts(purchase), [purchase]);
 
   const ask = async (value: string) => {
     const text = value.trim();
     if (!text || state === 'loading') return;
+    setLastQuestion(text);
     setMessages((items) => [...items, { id: `question-${Date.now()}`, role: 'user', text }]);
     setQuestion(''); setState('loading');
     try {
@@ -55,6 +57,10 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
       setMessages((items) => [...items, { id: `answer-${Date.now()}`, role: 'assistant', text: answer.answer, answer }]);
       setState('idle');
     } catch (error) {
+      // Failed questions return to the composer — never fabricate a fallback answer,
+      // and never leave a dangling unanswered message in the thread.
+      setMessages((items) => items.slice(0, -1));
+      setQuestion(text);
       setState(error instanceof Error && error.name === 'AIServiceError' && (error as { code?: string }).code === 'unavailable' ? 'unavailable' : 'error');
     }
   };
@@ -101,7 +107,13 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
             <View style={styles.conversation}>
               {messages.map((message) => (
                 <View key={message.id} style={[styles.message, message.role === 'user' ? styles.userMessage : styles.answerMessage]}>
-                  <Text style={message.role === 'user' ? styles.userText : type.body}>{message.text}</Text>
+                  {message.role === 'user' ? (
+                    <Text style={styles.userText}>{message.text}</Text>
+                  ) : (
+                    message.text.split(/\n{2,}/).map((paragraph, index) => (
+                      <Text key={index} style={[type.body, index > 0 ? { marginTop: spacing.sm } : null]}>{paragraph}</Text>
+                    ))
+                  )}
                   {message.answer ? (
                     <View style={{ marginTop: spacing.sm }}>
                       <Text style={styles.generated}>AI-GENERATED GUIDANCE · VERIFY WITH YOUR DOCUMENTS</Text>
@@ -120,7 +132,16 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
             </View>
           ) : null}
           {state === 'error' ? (
-            <Banner tone="danger" icon="alert-circle" title="ProofPilot could not answer right now" message="Your purchase details were not changed. Try again shortly." />
+            <View style={{ marginTop: spacing.md }}>
+              <Banner tone="danger" icon="alert-circle" title="ProofPilot could not answer right now" message="Your purchase details were not changed and no answer was generated. Retry, or check the saved facts below yourself.">
+                {lastQuestion ? <Button size="sm" variant="secondary" icon="refresh-cw" label="Retry last question" onPress={() => ask(lastQuestion)} style={{ marginTop: spacing.sm }} /> : null}
+              </Banner>
+            </View>
+          ) : null}
+          {state === 'unavailable' ? (
+            <View style={{ marginTop: spacing.md }}>
+              <Banner tone="info" icon="lock" title="The AI service is unavailable right now" message="No answer was generated. The saved facts above still show exactly what ProofPilot knows." />
+            </View>
           ) : null}
           <View style={styles.composer}>
             <Input accessibilityLabel="Ask a question about this purchase" value={question} onChangeText={setQuestion} placeholder="Ask about this purchase" onSubmitEditing={() => ask(question)} returnKeyType="send" containerStyle={{ flex: 1 }} />

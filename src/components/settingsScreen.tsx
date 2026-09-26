@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, Share, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, Share, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { colors, radius, spacing, type } from '../design/tokens';
+import { APP_VERSION, colors, radius, spacing, type } from '../design/tokens';
 import { cloudAvailable } from '../lib/purchaseRepository';
 import { protectionSummary } from '../lib/purchaseSelectors';
 import { createAIService } from '../services/ai/AIService';
@@ -18,19 +18,29 @@ type SettingsProps = {
   configured: boolean;
   syncStatus: SyncStatus;
   syncError: string | null;
+  online: boolean;
   onSignOut: () => void;
   onRestoreSamples: () => void;
   onDeleteAll: () => void;
-  onNotify: (message: string) => void;
+  onNotify: (message: string, tone?: 'success' | 'danger' | 'info') => void;
 };
 
-export function SettingsScreen({ items, settings, updateSettings, userEmail, configured, syncStatus, syncError, onSignOut, onRestoreSamples, onDeleteAll, onNotify }: SettingsProps) {
+export function SettingsScreen({ items, settings, updateSettings, userEmail, configured, syncStatus, syncError, online, onSignOut, onRestoreSamples, onDeleteAll, onNotify }: SettingsProps) {
   const [returnDays, setReturnDays] = useState(String(settings.defaultReturnWindowDays));
   const [saving, setSaving] = useState(false);
   useEffect(() => setReturnDays(String(settings.defaultReturnWindowDays)), [settings.defaultReturnWindowDays]);
   const [confirmWipe, setConfirmWipe] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const summary = protectionSummary(items);
   const ai = createAIService();
+  // Honest five-state sync indicator: Local, Syncing, Synced, Error, Offline.
+  const syncState: 'Local' | 'Syncing' | 'Synced' | 'Error' | 'Offline' =
+    !configured ? 'Local' : !online ? 'Offline' : syncStatus === 'syncing' ? 'Syncing' : syncStatus === 'synced' ? 'Synced' : syncStatus === 'error' ? 'Error' : 'Local';
+  const syncTone = syncState === 'Error' ? 'danger' : syncState === 'Synced' ? 'success' : syncState === 'Offline' ? 'warning' : syncState === 'Syncing' ? 'info' : 'neutral';
+  const openSupport = async () => {
+    try { await Linking.openURL('https://github.com/lamansami7/proofpilot/issues'); }
+    catch { onNotify('Could not open the support page. Visit github.com/lamansami7/proofpilot/issues', 'danger'); }
+  };
 
   const saveReturnDays = async () => {
     const parsed = Number(returnDays);
@@ -72,9 +82,16 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
             <Card style={styles.innerCard}>
               <View style={{ flex: 1 }}>
                 <Text style={type.label}>{userEmail}</Text>
-                <Text style={type.bodySmall}>Your purchases are tied to this account.</Text>
+                <Text style={type.bodySmall}>Your purchases stay tied to this account. Signing out switches back to on-device records; your account records reappear the next time you sign in.</Text>
               </View>
-              <Button size="sm" variant="secondary" icon="log-out" label="Sign out" onPress={onSignOut} />
+              {confirmSignOut ? (
+                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                  <Button size="sm" variant="secondary" label="Stay signed in" onPress={() => setConfirmSignOut(false)} />
+                  <Button size="sm" variant="danger" icon="log-out" label="Sign out" onPress={() => { setConfirmSignOut(false); onSignOut(); }} />
+                </View>
+              ) : (
+                <Button size="sm" variant="secondary" icon="log-out" label="Sign out" onPress={() => setConfirmSignOut(true)} />
+              )}
             </Card>
           </>
         ) : (
@@ -97,8 +114,14 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
       </Section>
 
       <Section icon="cloud" title="Cloud sync" detail={cloudAvailable() ? 'Supabase connection detected' : 'Not configured'}>
+        <View style={styles.syncRow}>
+          <Text style={type.label}>Current status</Text>
+          <Badge label={syncState} tone={syncTone} icon={syncState === 'Synced' ? 'check-circle' : syncState === 'Error' ? 'alert-circle' : syncState === 'Offline' ? 'cloud-off' : syncState === 'Syncing' ? 'refresh-cw' : 'hard-drive'} />
+        </View>
         {cloudAvailable() ? (
-          <Banner tone={syncStatus === 'error' ? 'warning' : syncStatus === 'synced' ? 'success' : 'info'} icon={syncStatus === 'error' ? 'alert-circle' : syncStatus === 'synced' ? 'check-circle' : 'refresh-cw'} title={syncStatus === 'error' ? 'Cloud sync needs attention' : syncStatus === 'synced' ? 'Cloud check finished · no pending uploads' : 'Cloud sync is connecting'} message={syncError ?? 'Purchases are saved locally first, then synchronized to your private Supabase account.'} />
+          <Banner tone={syncState === 'Error' ? 'warning' : syncState === 'Synced' ? 'success' : syncState === 'Offline' ? 'warning' : 'info'} icon={syncState === 'Error' ? 'alert-circle' : syncState === 'Synced' ? 'check-circle' : syncState === 'Offline' ? 'cloud-off' : 'refresh-cw'}
+            title={syncState === 'Error' ? 'Cloud sync needs attention' : syncState === 'Offline' ? 'Offline — saved on this device' : syncState === 'Synced' ? 'Cloud check finished · no pending uploads' : syncState === 'Syncing' ? 'Cloud sync in progress' : 'Cloud sync waiting'}
+            message={syncState === 'Offline' ? 'You appear to be offline. Changes stay safe on this device and sync automatically when you reconnect.' : syncError ?? 'Purchases are saved locally first, then synchronized to your private Supabase account.'} />
         ) : (
           <Banner tone="info" icon="cloud-off" title="Cloud sync is off" message="Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then run the migration in /supabase. Until then, everything you add is saved on this device only." />
         )}
@@ -151,6 +174,19 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
         </Card>
       </Section>
 
+      <Section icon="life-buoy" title="Support" detail="Get help with ProofPilot">
+        <Card style={styles.innerCard}>
+          <View style={styles.dataRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={type.label}>Report a problem or request a feature</Text>
+              <Text style={type.bodySmall}>Opens the ProofPilot GitHub issues page in your browser. Include what you expected and what happened.</Text>
+            </View>
+            <Button size="sm" variant="secondary" icon="external-link" label="Open support" onPress={() => { void openSupport(); }} />
+          </View>
+          <PrivacyRow text="When you export your data (above), you can attach the JSON to a bug report — it contains only your own purchase records." />
+        </Card>
+      </Section>
+
       <Section icon="help-circle" title="Help" detail="How ProofPilot decides what is protected">
         <Card style={styles.innerCard}>
           <PrivacyRow text="Protected — the purchase has a return or warranty date and a receipt attached." />
@@ -159,7 +195,7 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
           <PrivacyRow text="Deadlines are calculated from the dates you save. ProofPilot never invents dates, prices, or policies." />
         </Card>
         <View style={styles.versionRow}>
-          <Badge label="ProofPilot 1.0.0" tone="neutral" />
+          <Badge label={`ProofPilot ${APP_VERSION}`} tone="neutral" />
           <Badge label={ai.isConfigured ? 'AI service: connected' : 'AI service: not configured'} tone={ai.isConfigured ? 'success' : 'neutral'} />
           <Badge label={cloudAvailable() ? 'Supabase: configured' : 'Supabase: not configured'} tone={cloudAvailable() ? 'success' : 'neutral'} />
         </View>
@@ -200,6 +236,7 @@ const styles = StyleSheet.create({
   sectionIcon: { width: 38, height: 38, borderRadius: radius.md, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center' },
   innerCard: { padding: spacing.lg, gap: spacing.md },
   returnRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  syncRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, marginBottom: spacing.md },
   dataRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderColor: colors.border },
   privacyRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
   versionRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, flexWrap: 'wrap' },

@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, radius, shadows, spacing, type } from '../design/tokens';
-import { actionNeeded, deadlineStatus, documentInventory, formatDate, formatMoney, greeting, protectionSummary, recentPurchases, todayLine, upcomingDeadlines, type NormalizedDeadline } from '../lib/purchaseSelectors';
+import { actionNeeded, completedDeadlineCount, documentInventory, expiringWarranties, formatDate, formatMoney, greeting, missingProofCount, protectionSummary, recentPurchases, todayLine, upcomingDeadlines, type NormalizedDeadline } from '../lib/purchaseSelectors';
 import type { ActionNeeded, FeatherIconName, Purchase } from '../types/purchase';
 import { Badge, Banner, Button, Card, EmptyState, SectionHeader } from './ui';
 import { AttentionRow, DeadlineRow, ProductTile, PurchaseCard } from './purchaseComponents';
@@ -25,11 +25,17 @@ type DashboardProps = {
 
 export function Dashboard(props: DashboardProps) {
   const { items, isPhone, userEmail, sampleVisible, aiConfigured, onAdd, onOpen, onPurchases, onDeadlines, onVault, onDismissSample, onClearSamples, onRestoreSamples } = props;
-  const summary = protectionSummary(items);
-  const actions = actionNeeded(items);
-  const upcoming = upcomingDeadlines(items);
-  const docs = documentInventory(items);
-  const recent = recentPurchases(items).slice(0, 3);
+  // All numbers below are derived from stored records only — no invented statistics.
+  const summary = useMemo(() => protectionSummary(items), [items]);
+  const actions = useMemo(() => actionNeeded(items), [items]);
+  const upcoming = useMemo(() => upcomingDeadlines(items), [items]);
+  const docs = useMemo(() => documentInventory(items), [items]);
+  const recent = useMemo(() => recentPurchases(items).slice(0, 3), [items]);
+  const expiringSoon = useMemo(() => expiringWarranties(items).length, [items]);
+  const completedCount = useMemo(() => completedDeadlineCount(items), [items]);
+  const upcomingWithin30 = useMemo(() => upcoming.filter((deadline) => deadline.days <= 30).length, [upcoming]);
+  const missingProof = summary.missingReceipts;
+  const noFiles = useMemo(() => missingProofCount(items), [items]);
 
   return (
     <>
@@ -84,18 +90,23 @@ return or warranty window</Text>
             </View>
           </View>
           <View style={styles.metrics}>
-            <Metric icon="shopping-bag" value={summary.total} label="Purchases tracked" detail="Your collection, in one place" onPress={onPurchases} />
-            <Metric icon="shield" value={summary.protected} label="Actively protected" detail="Recorded dates, not a guarantee" onPress={onPurchases} />
-            <Metric icon="calendar" value={upcoming.filter(d => d.days <= 30).length} label="Deadlines in 30 days" detail="Incomplete · including today" onPress={onDeadlines} />
-            <Metric icon="clock" value={items.filter(p => p.warrantyEnd && deadlineStatus(p.warrantyEnd)!.days >= 0 && deadlineStatus(p.warrantyEnd)!.days <= 30).length} label="Warranties ending soon" detail="Within the next 30 days" onPress={onDeadlines} />
+            <Metric icon="shopping-bag" value={summary.total} label="Total purchases" detail="Everything on record" onPress={onPurchases} />
+            <Metric icon="shield" value={summary.protected} label="Protected" detail="Active window + receipt on file" onPress={onPurchases} />
+            <Metric icon="alert-circle" value={summary.attention + summary.unprotected} label="Need attention" detail="Missing a receipt or coverage dates" onPress={onPurchases} />
+            <Metric icon="calendar" value={upcoming.length} label="Upcoming deadlines" detail={`Incomplete · ${upcomingWithin30} within 30 days`} onPress={onDeadlines} />
           </View>
-          <ProtectionOverview summary={summary} upcoming={upcoming} actions={actions} isPhone={isPhone} onDeadlines={onDeadlines} onPurchases={onPurchases} />
+          <View style={styles.statStrip}>
+            <StatTile icon="shield" value={expiringSoon} label="Expiring warranties" detail="Next 30 days" onPress={onDeadlines} />
+            <StatTile icon="file-minus" value={missingProof} label="Missing receipts" detail="Purchases without proof" onPress={onVault} />
+            <StatTile icon="check-circle" value={completedCount} label="Completed deadlines" detail="Closed by you" onPress={onDeadlines} />
+          </View>
+          <ProtectionOverview summary={summary} upcoming={upcoming} actions={actions} noFiles={noFiles} isPhone={isPhone} onDeadlines={onDeadlines} onPurchases={onPurchases} />
 
           {actions.length > 0 ? (
             <View style={styles.section}>
-              <SectionHeader title="Needs your attention" detail={actions.length === 1 ? 'One item needs a quick review' : `${actions.length} items need a quick review`} actionLabel="Deadline Radar" onAction={onDeadlines} />
+              <SectionHeader title="What needs your attention" detail={actions.length === 1 ? 'One item needs a quick review' : `${actions.length} items need a quick review · ordered by urgency`} actionLabel="Deadline Radar" onAction={onDeadlines} />
               <View style={{ gap: spacing.sm }}>
-                {actions.slice(0, 4).map((action: ActionNeeded) => <AttentionRow key={action.id} action={action} onPress={() => onOpen(action.purchase)} />)}
+                {actions.slice(0, 5).map((action: ActionNeeded) => <AttentionRow key={action.id} action={action} onPress={() => onOpen(action.purchase)} />)}
               </View>
             </View>
           ) : (
@@ -156,7 +167,7 @@ return or warranty window</Text>
   );
 }
 
-function ProtectionOverview({ summary, upcoming, actions, isPhone, onDeadlines, onPurchases }: { summary: ReturnType<typeof protectionSummary>; upcoming: NormalizedDeadline[]; actions: ActionNeeded[]; isPhone: boolean; onDeadlines: () => void; onPurchases: () => void }) {
+function ProtectionOverview({ summary, upcoming, actions, noFiles, isPhone, onDeadlines, onPurchases }: { summary: ReturnType<typeof protectionSummary>; upcoming: NormalizedDeadline[]; actions: ActionNeeded[]; noFiles: number; isPhone: boolean; onDeadlines: () => void; onPurchases: () => void }) {
   const protectedPct = summary.total ? summary.protected / summary.total : 0;
   const attentionPct = summary.total ? summary.attention / summary.total : 0;
   return (
@@ -179,7 +190,7 @@ function ProtectionOverview({ summary, upcoming, actions, isPhone, onDeadlines, 
         <LegendDot color="#E4B15E" label={`${summary.attention} need attention`} />
         <LegendDot color={colors.borderStrong} label={`${summary.unprotected} unprotected`} />
         <View style={styles.overviewMeta}>
-          <Text style={type.bodySmall}>{upcoming.length} upcoming deadline{upcoming.length === 1 ? '' : 's'} · {summary.missingReceipts} missing receipt{summary.missingReceipts === 1 ? '' : 's'}</Text>
+          <Text style={type.bodySmall}>{upcoming.length} upcoming deadline{upcoming.length === 1 ? '' : 's'} · {summary.missingReceipts} missing receipt{summary.missingReceipts === 1 ? '' : 's'} · {noFiles} with no documents</Text>
           <Button size="sm" variant="ghost" label="View purchases" onPress={onPurchases} />
         </View>
       </View>
@@ -192,6 +203,22 @@ function Metric({ icon, value, label, detail, onPress }: { icon: FeatherIconName
     <View style={styles.metricTop}><Feather name={icon} size={18} color={colors.brandDark} /><Feather name="arrow-up-right" size={14} color={colors.muted} /></View>
     <Text style={styles.metricValue}>{value}</Text><Text style={type.label}>{label}</Text><Text style={[type.caption, { marginTop: 5 }]}>{detail}</Text>
   </Card>;
+}
+
+function StatTile({ icon, value, label, detail, onPress }: { icon: FeatherIconName; value: number; label: string; detail: string; onPress: () => void }) {
+  return (
+    <Card onPress={onPress} accessibilityLabel={`${value} ${label}. ${detail}`} style={styles.statTile}>
+      <View style={styles.statTileIcon}><Feather name={icon} size={14} color={colors.brandDark} /></View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={styles.statTileValueRow}>
+          <Text style={styles.statTileValue}>{value}</Text>
+          <Text numberOfLines={1} style={[type.label, { flexShrink: 1 }]}>{label}</Text>
+        </View>
+        <Text numberOfLines={1} style={type.caption}>{detail}</Text>
+      </View>
+      <Feather name="chevron-right" size={15} color={colors.subtle} />
+    </Card>
+  );
 }
 
 function LegendDot({ color, label }: { color: string; label: string }) {
@@ -225,8 +252,13 @@ const styles = StyleSheet.create({
   heroNumber: { color: '#FFFFFF', fontWeight: '800', fontSize: 44, letterSpacing: -2, marginTop: 10 },
   heroAsideLabel: { color: '#E2EFDD', fontSize: 14, fontWeight: '700' },
   heroAsideNote: { color: '#BECEC6', textAlign: 'center', fontSize: 11, lineHeight: 17, marginTop: 8 },
-  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginVertical: spacing.lg },
+  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.lg },
   metric: { flex: 1, flexBasis: 180, padding: spacing.lg, minWidth: 0 },
+  statStrip: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginVertical: spacing.lg },
+  statTile: { flex: 1, flexBasis: 200, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
+  statTileIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center' },
+  statTileValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  statTileValue: { fontSize: 17, fontWeight: '800', letterSpacing: -0.5, color: colors.ink },
   metricTop: { flexDirection: 'row', justifyContent: 'space-between' },
   metricValue: { fontSize: 32, fontWeight: '800', color: colors.ink, letterSpacing: -1, marginTop: spacing.lg, marginBottom: 5 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: spacing.xl, marginBottom: spacing.xl, flexWrap: 'wrap' },

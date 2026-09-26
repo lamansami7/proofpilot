@@ -84,16 +84,71 @@ There is no automatic import of guest data into an account, preventing accidenta
 uploads. Export guest records before configuring cloud if you need a separate backup. JSON
 exports include record metadata and file references, **not** binary document backups.
 
+## Version 2.0.0 upgrade
+
+The Expo / React Native architecture, Supabase foundation, and local-first behavior are
+unchanged. This release focuses on product depth, honesty, and regression safety:
+
+- **Dashboard** — every metric now comes from stored records only: total purchases, protected,
+  need attention, upcoming deadlines, expiring warranties (30 days), missing receipts, and
+  completed deadlines, plus an urgency-ordered "What needs your attention" list
+  (return deadlines → warranty expirations → missing proof → other dates).
+- **Purchases** — pinning (pinned records float to the top everywhere), sorting by date, name,
+  price, next deadline, and warranty end with direction control, receipt/pinned/category/
+  protection filters with one-click reset, an improved no-results state, and incremental
+  rendering ("Show more") so large collections stay fast.
+- **Purchase record** — pin/unpin, copy-record-summary quick action, and a next-deadline badge
+  next to the protection status.
+- **Deadline Radar** — "Overdue / expired" wording for past dates and a two-step confirmation
+  before marking a deadline completed (reopening stays one tap).
+- **Vault / document viewer** — in-app image previews (IndexedDB blobs resolved to object URLs
+  on web, file URIs on native), plus share/download actions. Failures keep the record and say
+  what happened.
+- **Claims** — a visible four-step workflow (verify facts → add issue → draft → review &
+  export), template vs. AI labeling on every draft, and a "Start over" action.
+- **Ask ProofPilot** — failed questions return to the composer with an explicit error and a
+  "Retry last question" button; answers render as paragraphs; unavailable AI states are stated
+  plainly and never filled with fabricated content.
+- **Settings** — five-state sync indicator (Local / Syncing / Synced / Error / Offline),
+  two-step sign-out confirmation, and a Support section linking to GitHub issues.
+- **Auth** — provider errors map to plain-language messages without inventing causes.
+- **Reliability** — store mutations (upsert/remove/replace/outbox) are pure, shared helpers
+  with tests for duplicate saves, tombstone revival, per-account storage isolation, and
+  bulk-replace semantics; the shell memoizes derived state.
+- **Accessibility** — removed nested interactive controls in attention rows, added labels to
+  new interactive surfaces, and kept touch targets ≥ 44px.
+- **Version 2.0.0** is declared once in `src/design/tokens.ts` (`APP_VERSION`) and mirrored in
+  `package.json` / `app.json`.
+
+No new Supabase migration is required for 2.0: pinning and all record edits travel inside the
+existing `record_data` JSONB column via `save_purchase_record`. Both migrations in
+`supabase/migrations` must still be applied for cloud sync to work at all.
+
 ### Verification
 
 ```bash
-npm test
+npm test                 # unit + selector + store + screen render suites
 npx tsc --noEmit
 npx expo export --platform web
 git diff --check
-npm run preview  # production export on 0.0.0.0:8080
+npm run preview          # production export on 0.0.0.0:8080
 ```
 
-Tests cover calendar boundaries, completion, live protection, strict validation, concurrent
-writes, quota failures, recovery, durable outboxes, cloud merge preservation, and template
-honesty. Live Supabase integration requires a configured project and applied migrations.
+Tests cover calendar boundaries, completion, reopening, live protection, strict validation
+(including zero-price and malformed prices), concurrent writes, quota failures, recovery,
+durable outboxes, cloud merge preservation, per-account isolation, attention prioritization,
+purchase sort/filter behavior, pin migration, settings validation, auth error mapping,
+screen render states, and the AI trust boundary (malformed responses, template labeling,
+no fabricated answers). Live Supabase integration requires a configured project and applied
+migrations.
+
+### Known limitations (honest list)
+
+- Document **files** live only on the device that attached them (IndexedDB/app files);
+  clearing site/app data removes them. Cloud sync carries document metadata and claim text,
+  never file bytes.
+- Notifications are not wired up; Deadline Radar is the reminder surface. The app says so.
+- AI answers and drafts require a backend you operate (`EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT`);
+  when absent, ProofPilot explains that and offers deterministic templates.
+- Cross-device edits resolve by last successful server write — not collaborative merging.
+- Modal focus is not keyboard-trapped on web; Escape and backdrop dismissal work.

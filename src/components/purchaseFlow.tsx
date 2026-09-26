@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { validatePurchaseFields } from '../lib/purchaseValidation';
@@ -21,7 +21,6 @@ const categoryIcons: Record<string, FeatherIconName> = { Electronics: 'monitor',
 const tints = ['#E7EDFF', '#FAE8DB', '#E3F1E9', '#FBE9EA', '#F1E8FA', '#EAF2F8', '#F6F0DD'];
 
 function formFor(purchase: Purchase): Form { return { name: purchase.name, merchant: purchase.merchant, price: purchase.price?.toString() ?? '', purchaseDate: purchase.purchaseDate ?? '', category: purchase.category, serial: purchase.serial ?? '', model: purchase.model ?? '', returnDeadline: purchase.returnDeadline ?? '', warrantyEnd: purchase.warrantyEnd ?? '', warrantyProvider: purchase.warrantyProvider ?? '', notes: purchase.notes ?? '' }; }
-function sanitizePrice(value: string): string { return value; }
 async function documentFor(asset: DocumentPicker.DocumentPickerAsset, kind: DocumentKind): Promise<PurchaseDocument> {
   const uri = asset.uri ? await persistDocumentUri(asset.uri, asset.name) : null;
   return { id: `document-${Date.now()}`, name: asset.name, kind, mimeType: asset.mimeType ?? null, uri, addedAt: isoDate(new Date()) };
@@ -61,7 +60,6 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
   const [documents, setDocuments] = useState<PurchaseDocument[]>([]);
   const [customDeadlines, setCustomDeadlines] = useState<PurchaseDeadline[]>([]);
   const [upload, setUpload] = useState<UploadState>('idle');
-  const [pendingKind, setPendingKind] = useState<DocumentKind>('receipt');
   const [saved, setSaved] = useState<Purchase | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'error'>('idle');
 
@@ -70,7 +68,7 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
   const update = (field: Field, value: string) => { setForm((current) => ({ ...current, [field]: value })); setErrors((current) => ({ ...current, [field]: undefined })); };
 
   const pickDocument = async (kind: DocumentKind) => {
-    setPendingKind(kind); setUpload('processing');
+    setUpload('processing');
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true, multiple: false });
       if (result.canceled) { setUpload('idle'); return; }
@@ -109,7 +107,7 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
     <Sheet visible={visible} onClose={() => { if (saveState !== 'saving') onClose(); }} wide eyebrow={editing ? 'EDIT RECORD' : 'NEW RECORD'} title={editing ? 'Edit purchase' : 'Protect a purchase'} subtitle={editing ? 'Keep this purchase record accurate and complete.' : 'Receipts, return windows, and warranties — one safe place.'}>
       {step === 'start' ? <StartStep onManual={() => setStep('form')} onScan={scanReceipt} onUpload={() => pickDocument('receipt')} upload={upload} /> : null}
       {step === 'form' ? (
-        <FormStep form={form} errors={errors} documents={documents} upload={upload} pendingKind={pendingKind} customDeadlines={customDeadlines} onCustomDeadlinesChange={setCustomDeadlines} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { if (validate()) setStep('review'); }} />
+        <FormStep form={form} errors={errors} documents={documents} upload={upload} customDeadlines={customDeadlines} onCustomDeadlinesChange={setCustomDeadlines} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { if (validate()) setStep('review'); }} />
       ) : null}
       {step === 'review' ? <ReviewStep purchase={purchaseFromForm(form, documents, customDeadlines, initialPurchase ?? undefined)} onEdit={() => setStep('form')} onSave={save} saveState={saveState} /> : null}
       {step === 'success' && saved ? <SuccessStep purchase={saved} editing={editing} onDone={() => onDone(saved)} /> : null}
@@ -153,20 +151,23 @@ function DateField({ label, value, error, onChange, hint, children }: { label: s
   );
 }
 
-function FormStep({ form, errors, documents, upload, pendingKind, customDeadlines, onCustomDeadlinesChange, update, onPickDocument, onRemoveDocument, merchantSuggestions, defaultReturnDays, onNext }: { form: Form; errors: Partial<Record<Field, string>>; documents: PurchaseDocument[]; upload: UploadState; pendingKind: DocumentKind; customDeadlines: PurchaseDeadline[]; onCustomDeadlinesChange: (deadlines: PurchaseDeadline[]) => void; update: (field: Field, value: string) => void; onPickDocument: (kind: DocumentKind) => void; onRemoveDocument: (id: string) => void; merchantSuggestions: string[]; defaultReturnDays: number; onNext: () => void }) {
+function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDeadlinesChange, update, onPickDocument, onRemoveDocument, merchantSuggestions, defaultReturnDays, onNext }: { form: Form; errors: Partial<Record<Field, string>>; documents: PurchaseDocument[]; upload: UploadState; customDeadlines: PurchaseDeadline[]; onCustomDeadlinesChange: (deadlines: PurchaseDeadline[]) => void; update: (field: Field, value: string) => void; onPickDocument: (kind: DocumentKind) => void; onRemoveDocument: (id: string) => void; merchantSuggestions: string[]; defaultReturnDays: number; onNext: () => void }) {
   const [kindPickerOpen, setKindPickerOpen] = useState(false);
   const [deadlineTitle, setDeadlineTitle] = useState('');
   const [deadlineDate, setDeadlineDate] = useState('');
   const [deadlineType, setDeadlineType] = useState<Extract<DeadlineType, 'rebate' | 'custom'>>('custom');
+  const merchantRef = React.useRef<TextInput>(null);
+  const priceRef = React.useRef<TextInput>(null);
+  const focusNext = (next: React.RefObject<TextInput | null>) => { try { next.current?.focus(); } catch { /* platform refused focus — keyboard stays put */ } };
   const deadlineValid = Boolean(deadlineTitle.trim() && isValidIsoDate(deadlineDate));
   const savedDeadlinesValid = customDeadlines.every((deadline) => Boolean(deadline.title.trim() && isValidIsoDate(deadline.date)));
   const addDeadline = () => { if (!deadlineValid) return; onCustomDeadlinesChange([...customDeadlines, { id: `deadline-${Date.now()}`, title: deadlineTitle.trim(), date: deadlineDate, type: deadlineType }]); setDeadlineTitle(''); setDeadlineDate(''); };
   return (
     <>
       <Text style={styles.stepHeading}>Purchase details</Text>
-      <Input label="PRODUCT NAME — REQUIRED" value={form.name} onChangeText={(value) => update('name', value)} placeholder="e.g. Samsung Smart Monitor M7" error={errors.name} returnKeyType="next" />
+      <Input label="PRODUCT NAME — REQUIRED" value={form.name} onChangeText={(value) => update('name', value)} placeholder="e.g. Samsung Smart Monitor M7" error={errors.name} returnKeyType="next" onSubmitEditing={() => focusNext(merchantRef)} blurOnSubmit={false} />
       <View style={{ height: spacing.md }} />
-      <Input label="MERCHANT — REQUIRED" value={form.merchant} onChangeText={(value) => update('merchant', value)} placeholder="e.g. Best Buy" error={errors.merchant} autoCapitalize="words" />
+      <Input ref={merchantRef} label="MERCHANT — REQUIRED" value={form.merchant} onChangeText={(value) => update('merchant', value)} placeholder="e.g. Best Buy" error={errors.merchant} autoCapitalize="words" returnKeyType="next" onSubmitEditing={() => focusNext(priceRef)} blurOnSubmit={false} />
       {merchantSuggestions.length ? (
         <View style={styles.suggestionRow}>
           {merchantSuggestions.map((merchant) => <Chip key={merchant} label={merchant} onPress={() => update('merchant', merchant)} />)}
@@ -175,7 +176,7 @@ function FormStep({ form, errors, documents, upload, pendingKind, customDeadline
       <View style={{ height: spacing.md }} />
       <View style={styles.row}>
         <View style={{ flex: 1 }}>
-          <Input label="PRICE — REQUIRED" value={form.price} onChangeText={(value) => update('price', sanitizePrice(value))} placeholder="0.00" prefix="$" keyboardType="decimal-pad" error={errors.price} hint={form.price && !errors.price && Number.isFinite(Number(form.price)) ? formatMoney(Number(form.price)) : undefined} />
+          <Input ref={priceRef} label="PRICE — REQUIRED" value={form.price} onChangeText={(value) => update('price', value)} placeholder="0.00" prefix="$" keyboardType="decimal-pad" error={errors.price} hint={form.price && !errors.price && Number.isFinite(Number(form.price)) ? formatMoney(Number(form.price)) : undefined} />
         </View>
         <View style={{ flex: 1.2 }}>
           <DateField label="PURCHASE DATE — REQUIRED" value={form.purchaseDate} error={errors.purchaseDate} onChange={(value) => update('purchaseDate', value)}>

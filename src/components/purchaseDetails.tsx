@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, Share, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { persistDocumentUri } from '../lib/documents';
-import { deadlineStatus, deriveProtection, documentKindLabel, formatDate, formatMoney, isoDate, protectionLabel } from '../lib/purchaseSelectors';
+import { deadlineStatus, deriveProtection, documentKindLabel, formatDate, formatMoney, isoDate, nextDeadlineFor, protectionLabel } from '../lib/purchaseSelectors';
 import type { DocumentKind, FeatherIconName, Purchase, PurchaseDocument } from '../types/purchase';
 import { Badge, Button, Card, Chip, IconButton, Sheet, type BadgeTone } from './ui';
 import { ProductTile } from './purchaseComponents';
@@ -23,19 +23,53 @@ function windowBadge(date: string | null): { label: string; tone: BadgeTone } {
   return { label: `${status.days} days left`, tone: 'success' };
 }
 
-export function PurchaseDetails({ purchase, onClose, onEdit, onDelete, onUpdate, onNotify }: { purchase: Purchase | null; onClose: () => void; onEdit: (purchase: Purchase) => void; onDelete: (purchase: Purchase) => void; onUpdate: (purchase: Purchase) => Promise<void>; onNotify: (message: string) => void }) {
+export function PurchaseDetails({ purchase, onClose, onEdit, onDelete, onUpdate, onNotify }: { purchase: Purchase | null; onClose: () => void; onEdit: (purchase: Purchase) => void; onDelete: (purchase: Purchase) => void; onUpdate: (purchase: Purchase) => Promise<void>; onNotify: (message: string, tone?: 'success' | 'danger' | 'info') => void }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [expanded, setExpanded] = useState<'assistant' | 'claim' | null>(null);
   const [addingDocument, setAddingDocument] = useState(false);
   const [pickingKind, setPickingKind] = useState<DocumentKind | null>(null);
   const [viewing, setViewing] = useState<ViewableDocument | null>(null);
+  const [copiedSummary, setCopiedSummary] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   if (!purchase) return null;
   const returnBadge = windowBadge(purchase.returnDeadline);
   const warrantyBadge = windowBadge(purchase.warrantyEnd);
   const extraDeadlines = purchase.deadlines.filter((deadline) => deadline.type === 'rebate' || deadline.type === 'custom');
+  const nextDeadline = nextDeadlineFor(purchase);
 
   const toggle = (section: 'assistant' | 'claim') => setExpanded((current) => (current === section ? null : section));
+
+  const togglePin = async () => {
+    setBusy(true);
+    try {
+      await onUpdate({ ...purchase, pinned: !purchase.pinned });
+      onNotify(purchase.pinned ? `${purchase.name} unpinned.` : `${purchase.name} pinned to the top of your lists.`, 'success');
+    } catch { onNotify('The pin could not be saved. Your record is unchanged.', 'danger'); } finally { setBusy(false); }
+  };
+
+  const copySummary = async () => {
+    const lines = [
+      `${purchase.name} — ${purchase.merchant}`,
+      `Price: ${formatMoney(purchase.price)}`,
+      `Purchase date: ${formatDate(purchase.purchaseDate)}`,
+      `Return deadline: ${purchase.returnDeadline ? formatDate(purchase.returnDeadline) : 'Not added'}`,
+      `Warranty: ${purchase.warrantyEnd ? `coverage through ${formatDate(purchase.warrantyEnd)}${purchase.warrantyProvider ? ` (${purchase.warrantyProvider})` : ''}` : 'Not added'}`,
+      purchase.serial ? `Serial: ${purchase.serial}` : null,
+      purchase.model ? `Model: ${purchase.model}` : null,
+      `Documents on file: ${purchase.documents.length}`,
+      `Protection status: ${protectionLabel(purchase.protectionStatus)} — calculated from saved dates and receipts.`,
+    ].filter(Boolean).join('\n');
+    try {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(lines);
+        setCopiedSummary(true); setTimeout(() => setCopiedSummary(false), 2200);
+        onNotify('Record summary copied to clipboard.', 'success');
+      } else {
+        await Share.share({ title: `${purchase.name} summary`, message: lines });
+      }
+    } catch { onNotify('Could not copy the summary. Your record is unchanged.', 'danger'); }
+  };
 
   const attachDocument = async (kind: DocumentKind) => {
     setPickingKind(null); setAddingDocument(true);
@@ -57,10 +91,16 @@ export function PurchaseDetails({ purchase, onClose, onEdit, onDelete, onUpdate,
       <View style={styles.headerRow}>
         <ProductTile purchase={purchase} size={52} />
         <View style={{ flex: 1, gap: 6 }}>
-          <Badge label={protectionLabel(purchase.protectionStatus)} tone={protectionTone(purchase.protectionStatus)} icon="shield" />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+            <Badge label={protectionLabel(purchase.protectionStatus)} tone={protectionTone(purchase.protectionStatus)} icon="shield" />
+            {purchase.pinned ? <Badge label="Pinned" tone="brand" icon="bookmark" /> : null}
+            {nextDeadline ? <Badge label={`${nextDeadline.days < 0 ? 'Past due' : nextDeadline.days === 0 ? 'Due today' : `${nextDeadline.days}d left`} · ${nextDeadline.title}`} tone={nextDeadline.days <= 2 ? 'danger' : nextDeadline.days <= 14 ? 'warning' : 'info'} icon="clock" /> : null}
+          </View>
           <Text style={type.bodySmall}>{purchase.category}{purchase.documents.length ? ` · ${purchase.documents.length} document${purchase.documents.length === 1 ? '' : 's'}` : ' · No documents yet'}</Text>
         </View>
         <View style={styles.headerActions}>
+          <Button size="sm" variant={purchase.pinned ? 'primary' : 'secondary'} icon="bookmark" label={purchase.pinned ? 'Pinned' : 'Pin'} loading={busy} onPress={() => { void togglePin(); }} accessibilityLabel={purchase.pinned ? `Unpin ${purchase.name}` : `Pin ${purchase.name} to the top of lists`} />
+          <Button size="sm" variant="secondary" icon={copiedSummary ? 'check' : 'copy'} label={copiedSummary ? 'Copied' : 'Copy summary'} onPress={() => { void copySummary(); }} />
           <Button size="sm" variant="secondary" icon="edit-2" label="Edit" onPress={() => onEdit(purchase)} />
           <Button size="sm" variant="secondary" icon="paperclip" label="Add document" loading={addingDocument} onPress={() => setPickingKind((current) => (current ? null : 'receipt'))} />
         </View>

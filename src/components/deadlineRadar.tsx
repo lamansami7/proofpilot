@@ -11,7 +11,7 @@ type Filter = 'all' | DeadlineType;
 type Sort = 'urgency' | 'date' | 'purchase';
 const filters: Array<[Filter, string]> = [['all', 'All deadlines'], ['return', 'Returns'], ['warranty', 'Warranties'], ['rebate', 'Rebates'], ['custom', 'Custom']];
 const groupOrder: Array<{ id: DeadlineGroup; title: string; detail: string }> = [
-  { id: 'overdue', title: 'Overdue', detail: 'Needs attention now' },
+  { id: 'overdue', title: 'Overdue / expired', detail: 'Past the recorded date' },
   { id: 'today', title: 'Today', detail: 'Due by midnight' },
   { id: 'week', title: 'This week', detail: 'Next 7 days' },
   { id: 'month', title: 'This month', detail: 'Later this month' },
@@ -28,6 +28,7 @@ export function DeadlineRadar({ deadlines, onOpenPurchase, onAdd, onUpdate }: { 
   const [sort, setSort] = useState<Sort>('urgency');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<NormalizedDeadline | null>(null);
+  const [confirmingComplete, setConfirmingComplete] = useState(false);
 
   const filtered = useMemo(() => deadlines
     .filter((deadline) => Boolean(deadline.completed) === completed && (filter === 'all' || deadline.type === filter) && `${deadline.purchase.name} ${deadline.purchase.merchant} ${deadlineTypeLabel(deadline.type)}`.toLowerCase().includes(query.toLowerCase()))
@@ -72,7 +73,7 @@ export function DeadlineRadar({ deadlines, onOpenPurchase, onAdd, onUpdate }: { 
       {filtered.length === 0 ? (
         <EmptyState compact icon="search" title="No deadlines match" message="Try a different search or filter — your other deadlines are still being tracked." />
       ) : completed ? (
-        <View style={styles.grid}>{filtered.map(deadline => <DeadlineCard key={`${deadline.purchase.id}-${deadline.id}`} deadline={deadline} onPress={() => { setSelected(deadline); setError(''); }} />)}</View>
+        <View style={styles.grid}>{filtered.map(deadline => <DeadlineCard key={`${deadline.purchase.id}-${deadline.id}`} deadline={deadline} onPress={() => { setSelected(deadline); setError(''); setConfirmingComplete(false); }} />)}</View>
       ) : (
         <View style={styles.groups}>
           {groupOrder.filter((group) => grouped[group.id].length > 0).map((group) => (
@@ -82,14 +83,14 @@ export function DeadlineRadar({ deadlines, onOpenPurchase, onAdd, onUpdate }: { 
                 <Text style={type.bodySmall}>{group.detail} · {grouped[group.id].length}</Text>
               </View>
               <View style={styles.grid}>
-                {grouped[group.id].map((deadline) => <DeadlineCard key={deadline.id} deadline={deadline} onPress={() => { setSelected(deadline); setError(''); }} />)}
+                {grouped[group.id].map((deadline) => <DeadlineCard key={deadline.id} deadline={deadline} onPress={() => { setSelected(deadline); setError(''); setConfirmingComplete(false); }} />)}
               </View>
             </View>
           ))}
         </View>
       )}
 
-      <Sheet visible={Boolean(selected)} onClose={() => setSelected(null)} eyebrow="DEADLINE DETAIL" title={selected ? deadlineTypeLabel(selected.type) : undefined} subtitle={selected ? `${days(selected)} · ${formatDate(selected.date)}` : undefined}>
+      <Sheet visible={Boolean(selected)} onClose={() => { setSelected(null); setConfirmingComplete(false); }} eyebrow="DEADLINE DETAIL" title={selected ? deadlineTypeLabel(selected.type) : undefined} subtitle={selected ? `${days(selected)} · ${formatDate(selected.date)}` : undefined}>
         {selected ? (
           <>
             <View style={styles.detailProduct}>
@@ -111,13 +112,29 @@ export function DeadlineRadar({ deadlines, onOpenPurchase, onAdd, onUpdate }: { 
               <Text style={type.bodySmall}>Reminders are not connected in this build — nothing has been scheduled or sent. Track this date here until notifications are enabled.</Text>
             </View>
             <Text style={[type.caption, { marginTop: spacing.md }]}>Completing a deadline removes it from action lists. It does not extend coverage or submit a claim.</Text>
-            {error ? <Text accessibilityRole="alert" style={{ color: colors.danger }}>{error}</Text> : null}
-            <Button label={selected.completed ? 'Reopen deadline' : 'Mark completed'} icon={selected.completed ? 'rotate-ccw' : 'check'} loading={saving} onPress={async () => {
-              setSaving(true); setError('');
-              try { await onUpdate({ ...selected.purchase, deadlines: selected.purchase.deadlines.map(d => d.id === selected.id ? { ...d, completed: !selected.completed } : d) }); setSelected(null); }
-              catch { setError('Could not save. Your deadline has not changed. Try again.'); }
-              finally { setSaving(false); }
-            }} style={{ marginTop: spacing.md }} fullWidth />
+            {error ? <Text accessibilityRole="alert" style={{ color: colors.danger, marginTop: spacing.sm }}>{error}</Text> : null}
+            {!selected.completed && confirmingComplete ? (
+              <View accessibilityLiveRegion="polite" style={styles.confirmNote}>
+                <Feather name="help-circle" size={15} color={colors.inkSecondary} />
+                <Text style={type.bodySmall}>Mark this deadline as completed? It will leave active lists (you can reopen it anytime) — coverage dates on the purchase do not change.</Text>
+              </View>
+            ) : null}
+            <Button
+              label={!selected.completed ? (confirmingComplete ? 'Confirm — mark completed' : 'Mark completed') : 'Reopen deadline'}
+              icon={!selected.completed ? (confirmingComplete ? 'check-circle' : 'check') : 'rotate-ccw'}
+              variant={confirmingComplete ? 'primary' : 'secondary'}
+              loading={saving}
+              onPress={async () => {
+                if (!selected.completed && !confirmingComplete) { setConfirmingComplete(true); return; }
+                setSaving(true); setError('');
+                try {
+                  await onUpdate({ ...selected.purchase, deadlines: selected.purchase.deadlines.map(d => d.id === selected.id ? { ...d, completed: !selected.completed } : d) });
+                  setSelected(null); setConfirmingComplete(false);
+                }
+                catch { setError('Could not save. Your deadline has not changed. Try again.'); }
+                finally { setSaving(false); }
+              }}
+              style={{ marginTop: spacing.md }} fullWidth />
             <Button label="Open purchase record" icon="arrow-right" onPress={() => { onOpenPurchase(selected.purchase); setSelected(null); }} style={{ marginTop: spacing.lg }} fullWidth />
           </>
         ) : null}
@@ -199,4 +216,5 @@ const styles = StyleSheet.create({
   detailRow: { paddingVertical: spacing.sm, borderBottomWidth: 1, borderColor: colors.border, gap: 4 },
   detailValue: { color: colors.inkSecondary, textAlign: 'right', flexShrink: 1 },
   reminderNote: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', marginTop: spacing.lg, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted },
+  confirmNote: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start', marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.infoSurface, borderWidth: 1, borderColor: colors.border },
 });
