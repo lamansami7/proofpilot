@@ -149,14 +149,14 @@ export function Dashboard(props: DashboardProps) {
                 <Feather name="shield" size={14} color={colors.brand} />
                 <Text style={styles.heroEyebrow}>YOUR PURCHASES. BETTER PROTECTED.</Text>
               </View>
-              <Text style={styles.heroTitle}>Keep the proof. Stay ahead of the dates.</Text>
-              <Text style={styles.heroBody}>A clear picture of what you own, what’s covered, and what needs your attention next.</Text>
+              <Text style={[styles.heroTitle, isPhone && styles.heroTitlePhone]}>Keep the proof. Stay ahead of the dates.</Text>
+              <Text style={[styles.heroBody, isPhone && styles.heroBodyPhone]}>A clear picture of what you own, what’s covered, and what needs your attention next.</Text>
               <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, flexWrap: 'wrap' }}>
                 <Button label="Open Deadline Radar" icon="arrow-up-right" onPress={onDeadlines} />
                 <Button variant="secondary" label="View all purchases" onPress={onPurchases} />
               </View>
             </View>
-            <View style={styles.heroAside}>
+            <View style={[styles.heroAside, isPhone && styles.heroAsidePhone]}>
               <View style={styles.heroShield}>
                 <Feather name="shield" size={32} color={colors.brand} />
               </View>
@@ -504,7 +504,10 @@ const styles = StyleSheet.create({
   heroKicker: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   heroEyebrow: { color: '#C6E0BD', fontSize: 10, letterSpacing: 1.4, fontWeight: '700', flexShrink: 1 },
   heroTitle: { fontSize: 32, lineHeight: 38, letterSpacing: -1, color: '#FFFFFF', fontWeight: '800', marginTop: spacing.lg },
+  heroTitlePhone: { fontSize: 26, lineHeight: 32 },
   heroBody: { color: '#CCDAD4', fontSize: 14, lineHeight: 22, marginTop: spacing.md, maxWidth: 480 },
+  heroBodyPhone: { fontSize: 13, lineHeight: 20 },
+  heroAsidePhone: { flexBasis: '100%', marginTop: spacing.md },
   heroAside: {
     flexGrow: 1,
     flexBasis: 200,

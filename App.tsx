@@ -297,13 +297,7 @@ export default function App() {
                                   : 'Local storage'}
                     </Text>
                     {store.syncStatus === 'error' && store.online ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() => void store.retrySync()}
-                        style={interactive({ paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.pill, backgroundColor: colors.dangerSurface })}
-                      >
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: colors.danger }}>Retry</Text>
-                      </Pressable>
+                      <Button size="sm" variant="danger" label="Retry" onPress={() => void store.retrySync()} />
                     ) : null}
                   </View>
                 </View>

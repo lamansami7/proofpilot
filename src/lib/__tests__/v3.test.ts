@@ -303,6 +303,17 @@ describe('Protection summary V3', () => {
     expect(deriveProtection(protectedItem, now)).toBe('protected');
     expect(deriveProtection(attentionItem, now)).toBe('attention');
     expect(deriveProtection(unprotectedItem, now)).toBe('unprotected');
+
+    const protectedPurchase = { ...demoPurchases[0], id: 'p-protected', returnDeadline: '2099-12-31', warrantyEnd: null, hasReceipt: true } as Purchase;
+    const attentionPurchase = { ...demoPurchases[0], id: 'p-attention', returnDeadline: '2099-12-31', warrantyEnd: null, hasReceipt: false } as Purchase;
+    const unprotectedPurchase = { ...demoPurchases[0], id: 'p-unprotected', returnDeadline: null, warrantyEnd: null, hasReceipt: false } as Purchase;
+    const summary = protectionSummary([protectedPurchase, attentionPurchase, unprotectedPurchase]);
+    expect(summary.total).toBe(3);
+    expect(summary.protected).toBe(1);
+    expect(summary.attention).toBe(1);
+    expect(summary.unprotected).toBe(1);
+    expect(summary.missingReceipts).toBe(2);
+    expect(summary.valueProtected).toBeGreaterThanOrEqual(0);
   });
 
   test('normalizedDeadlines sorts by urgency', () => {

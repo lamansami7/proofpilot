@@ -210,13 +210,13 @@ export function PurchasesScreen({
 }
 
 const styles = StyleSheet.create({
-  controls: { padding: spacing.lg, marginBottom: spacing.lg, gap: spacing.md, borderColor: colors.borderSubtle },
+  controls: { padding: spacing.lg, marginBottom: spacing.lg, gap: spacing.md, borderColor: colors.borderSubtle, borderRadius: radius.lg },
   controlsTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md, flexWrap: 'wrap' },
   controlsMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.brandStrong },
+  dot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.brandStrong },
   sortRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', alignItems: 'center' },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'center' },
-  filterDivider: { width: 1, backgroundColor: colors.border, alignSelf: 'stretch', marginVertical: 2, minHeight: 24 },
+  filterDivider: { width: 1, backgroundColor: colors.border, alignSelf: 'stretch', marginVertical: 2, minHeight: 24, borderRadius: radius.pill },
   categoryRow: { gap: spacing.sm, paddingVertical: 2 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   moreRow: { alignItems: 'center', marginTop: spacing.lg, gap: spacing.sm },
