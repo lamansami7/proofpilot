@@ -14,12 +14,13 @@ Clean `npm ci` applied all four patches. Real PostgreSQL-compatible PGlite migra
 
 | Check | Latest result |
 |---|---|
-| Full Jest | 248 tests, 20 suites passed |
+| Full Jest | 260 tests, 21 suites passed |
 | Embedded PostgreSQL/RLS | 26 assertions passed |
-| Deno handler tests | 11 passed |
+| Deno handler/HTTP tests | 18 passed |
 | Deno production entrypoint checks | Both passed |
 | Tooling compatibility | 5 checks passed |
-| Playwright Chromium | 19 passed |
+| Playwright Chromium | 24 passed |
+| Release/staging configuration tests | 9 passed |
 | TypeScript incl. unused locals/parameters | Passed |
 | Web production export + offline shell | Passed |
 | iOS/Android bundle export and project prebuild | Passed; not compiled/signed |
@@ -32,7 +33,7 @@ Clean `npm ci` applied all four patches. Real PostgreSQL-compatible PGlite migra
 
 RLS isolation, deletion-wins tombstones, account-bound sync credentials, native SecureStore auth persistence, exact PKCE callback parsing, bounded restore/file inputs, conservative original-file protections, strict server identity checks, redacted backend errors and private server keys. File cleanup now fails closed on corrupt caches. No provider secret embedded in client. Local records are not encrypted by the app. Browser sessions and local records remain exposed to a compromised/shared browser profile. No independent penetration test, malware scan, historical secret audit or compliance certification performed.
 
-## 5. Database — VERIFIED locally; REQUIRES MY CONFIGURATION
+## 5. Database — VERIFIED locally; REQUIRES CONFIGURATION
 
 Four ordered migrations include read-only categories, account-closing write freeze, Storage prefix controls, purchase-data validation and atomic quota reservation. Embedded harness covers ownership/RLS, idempotency, tombstones and malformed writes; it uses minimal Auth/Storage schemas, not real hosted services or concurrent DB sessions. Apply migrations before clients. Real two-account verification and two-device conflict tests remain mandatory.
 
@@ -44,13 +45,13 @@ Email confirmation, web recovery, native PKCE callback validation and recent-pas
 
 ## 7. AI — FIXED backend implementation; REQUIRES EXTERNAL SERVICE
 
-Optional Edge Function authenticates JWT with Auth, validates minimized context, reserves quotas (3/min, 20/day/account, 200/day deployment), bounds upstream work and propagates cancellation/timeouts. Disabled by default. Server-only provider key/model/billing and retention review required. Eleven handler tests include AI and deletion paths but use injected dependencies, not a live provider. Outputs remain unverified; no OCR or automatic claim submission.
+Optional Edge Function authenticates JWT with Auth, validates minimized context, reserves quotas (3/min, 20/day/account, 200/day deployment), bounds upstream work and propagates cancellation/timeouts. Disabled by default. Server-only provider key/model/billing and retention review required. Eighteen backend tests include AI, HTTP and deletion paths but use injected dependencies, not a live provider. Outputs remain unverified; no OCR or automatic claim submission.
 
 ## 8. Browser and design — VERIFIED Chromium subset
 
-19 tests cover seven widths: 320/375/430/768/1024/1280/1440; real create/pin/edit/reload/delete, five main screens, nested dialogs, real IndexedDB file attachment/preview/export/delete/restore, concurrent two-tab saves, arrow-key navigation and offline reload. Automated screenshots and axe scans captured. Manual review of main-screen contact sheets at 320/768/1440 and earlier full Home/Settings narrow screenshots found and fixed squeezed headings and overflowing sort controls; heading dimensions now have regression assertions. This is not exhaustive manual review of every scrolled section/auth/error state. Firefox, Safari, actual Chromebook, zoom/large text and deployed-origin service-worker update behavior remain unverified.
+24 tests cover seven widths: 320/375/430/768/1024/1280/1440; real create/pin/edit/reload/delete, five main screens, nested dialogs, real IndexedDB file attachment/preview/export/delete/restore, concurrent two-tab saves, arrow-key navigation and offline reload. Automated screenshots and axe scans captured. Manual review now includes main-screen, empty, form and cleanup-error contact sheets at 320/375/768/1024/1440. Earlier heading/sort fixes remain. New review found validation errors were offscreen after submitting a long form; the first invalid field now receives focus and is asserted in viewport at five widths. Full-size 320px form-error and cleanup-error screens were reviewed after correction. This is not exhaustive manual review of every scrolled section/auth/error/loading state. Live authentication browser states remain unverified in the unconfigured export. Firefox, Safari, actual Chromebook, zoom/large text and deployed-origin service-worker update behavior remain unverified.
 
-## 9. Mobile/native — REQUIRES REAL-DEVICE TESTING
+## 9. Mobile/native — REQUIRES REAL DEVICE
 
 Original icon/adaptive/splash/favicon included. Android and iOS project generation and Hermes exports passed. No APK/IPA was compiled, signed, installed or run. Test camera/gallery/document picker, permissions, SecureStore, network transitions, lifecycle, recovery deep links, sharing/temporary-file deletion, orientation, safe areas, large text and VoiceOver/TalkBack. Generated Android permissions need release review, including inherited storage/overlay/vibration permissions. Old Expo SDK eligibility is not proven.
 
@@ -60,17 +61,17 @@ Observed web export approximately 911 kB uncompressed JS plus 56.2 kB font, vers
 
 ## 11. Accessibility — FIXED / VERIFIED automated subset
 
-Keyboard tab navigation, Escape/focus return, modal containment, nested-modal ARIA patch, labeled controls, reduced motion and contrast corrections. Populated main screens and nested preview have zero violations under the configured axe WCAG 2 A/AA and 2.1 AA tags in tested flows. Automated axe does not establish WCAG conformance. Screen reader and real-device large-font review REQUIRES REAL-DEVICE TESTING.
+Keyboard tab navigation, Escape/focus return, modal containment, nested-modal ARIA patch, labeled controls, reduced motion and contrast corrections. Populated main screens and nested preview have zero violations under the configured axe WCAG 2 A/AA and 2.1 AA tags in tested flows. Automated axe does not establish WCAG conformance. Screen reader and real-device large-font review REQUIRES REAL DEVICE.
 
-## 12. Dependencies — VERIFIED audit; release compatibility REQUIRES REAL-DEVICE TESTING
+## 12. Dependencies — VERIFIED audit; release compatibility REQUIRES REAL DEVICE
 
 Clean install audited 1,141 packages with zero reported vulnerabilities; four explicit adapters applied. No force-fix. See DEPENDENCY_SECURITY.md for pinned versions and patch rationale. Native prebuild validates only generation, not runtime/store acceptance. Current store SDK/API rules and supported Expo upgrade planning remain open.
 
-## 13. Privacy/legal — REQUIRES MY CONFIGURATION
+## 13. Privacy/legal — REQUIRES HUMAN/LEGAL DECISION
 
 Technical disclosure updated with metadata-only backup, local attachment retention, cleanup, AI limits and account-deletion uncertainty. Configurable HTTPS privacy link/private support email; unavailable state otherwise. Operator identity/contact, lawful disclosures, regions, retention/backup erasure, provider terms, independent web deletion route, legal approval and operational support are not supplied. Draft must not be published as final policy.
 
-## 14. Store release — REQUIRES MY CONFIGURATION / REQUIRES REAL-DEVICE TESTING
+## 14. Store release — REQUIRES CONFIGURATION / REQUIRES REAL DEVICE
 
 EAS preview/production profiles and native build identifiers prepared. Actual EAS project/signing credentials, package ownership, current target API/Apple SDK compatibility, reviewed permissions, release screenshots/feature graphic, store metadata, privacy/Data Safety declarations and store review remain outstanding. No submission performed.
 
@@ -78,13 +79,13 @@ EAS preview/production profiles and native build identifiers prepared. Actual EA
 
 | Blocker | Classification |
 |---|---|
-| Hosted project, migrations, Auth/SMTP redirects and monitoring | REQUIRES MY CONFIGURATION |
+| Hosted project, migrations, Auth/SMTP redirects and monitoring | REQUIRES CONFIGURATION |
 | Live RLS/Storage, multi-device conflicts, email and deletion tests | REQUIRES EXTERNAL SERVICE |
 | Lost deletion response/confirmation-ledger recovery and other-device cache expectations | NOT SAFE TO SHIP |
 | AI provider deployment/billing/retention and real failure tests | REQUIRES EXTERNAL SERVICE |
-| EAS project, signing/accounts, policy/support and store declarations | REQUIRES MY CONFIGURATION |
-| Native runtime, permissions, lifecycle, assistive technology | REQUIRES REAL-DEVICE TESTING |
-| Store target/API/SDK compatibility and signed acceptance | REQUIRES MY CONFIGURATION |
+| EAS project, signing/accounts, policy/support and store declarations | REQUIRES CONFIGURATION |
+| Native runtime, permissions, lifecycle, assistive technology | REQUIRES REAL DEVICE |
+| Store target/API/SDK compatibility and signed acceptance | REQUIRES CONFIGURATION |
 | Full cross-browser/scrolled-state design review, deployed SW lifecycle and independent security review | NOT SAFE TO SHIP until release review closes coverage gaps |
 
 Features absent by design, not falsely promised: notifications, OCR, document-binary cloud backup, payments. Keep independent originals; metadata exports do not restore attachment contents.
@@ -100,3 +101,17 @@ Public build variables: EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY,
 ## 18. Is PR #9 safely mergeable?
 
 **Not approved as a production-launch merge. Keep draft/unmerged.** Local-only review/staging work has substantial passing evidence, but hosted migrations/services, uncertain deletion recovery, native/store compatibility and legal/support gates remain. A maintainer could separately approve a staging-only merge after reviewing the complete patch and deployment dependencies; that is not this audit's authorization. No merge or store submission was performed. Obtain live/device evidence and resolve the listed unsafe paths before a production-readiness claim.
+
+
+## Continuation from b644a83 — additional verified fixes
+
+- Deletion previously ignored a returned sign-out error and could drop its recovery marker before credential cleanup. The confirmed marker now survives until local sign-out, cache removal and managed-file cleanup all finish. Another current account is not signed out. Eleven new client deletion tests cover wrong password, durable-intent failure, network/invalid/unconfirmed/server responses, failed sign-out, file retry, failed confirmation write, other-account isolation and malformed ledgers.
+- Startup waits for the purge scan before purchase-store hydration/sync. Unknown ledgers still block; this does **not** solve remote success with lost confirmation. The recovery screen is constrained/readable and warns that clearing data also affects other accounts.
+- Late initial native auth callbacks after hook unmount are ignored, with a regression test.
+- Server AI facts now come directly from validated user-provided context; model-authored fact lists are not returned as evidence. Mandatory warning text is server-enforced, provider JSON is byte-bounded, and JSON-lookalike media types are rejected. Suggestions can still hallucinate; no semantic guarantee or extracted-document facts are claimed.
+- Release validation rejects unsafe URLs, recognizable privileged keys, placeholder EAS IDs and invalid native identifiers; it requires recorded live/device/legal approvals. These checks validate syntax, not ownership or truth of approval. Nine independent Node tests cover the validator. Live staging checks require an explicitly identified matching project reference before any network request.
+- Jest now preserves environment variables in its test transformer so feature-gated deletion code is actually exercised, rather than compiling the feature off before mocks run. Production Expo transformations are unchanged.
+
+Final local regression: 260 Jest tests / 21 suites; 26 migration assertions; 18 Deno tests; 9 release-config tests; 5 tooling checks; 24 browser tests. Strict TypeScript, web/offline export, all-platform Hermes/JS export, repeated Android/iOS prebuild and npm audit (zero findings) passed. No lint/formatter script is configured; `git diff --check` is the whitespace check, not a claimed linter. Previous clean-install evidence remains from the baseline; dependencies were not changed in this continuation. Test scripts/configuration changed only.
+
+**Status separation:** VERIFIED means the local evidence above only. REQUIRES CONFIGURATION covers identified staging/EAS/public values. REQUIRES EXTERNAL SERVICE covers live Auth/SMTP/Storage/provider and conflict tests. REQUIRES REAL DEVICE covers Android/iOS runtime and accessibility. REQUIRES HUMAN/LEGAL DECISION covers policy, retention, support, store disclosures and acceptance of deletion recovery. The lost-confirmation recovery path remains NOT SAFE TO SHIP without an approved, tested resolution. No migrations were applied remotely, no store submission occurred, and PR #9 is not authorized to merge.

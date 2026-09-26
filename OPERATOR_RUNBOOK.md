@@ -11,6 +11,7 @@ npm ci
 npm test -- --runInBand
 npm run test:migrations
 npm run test:tooling
+npm run test:release-config
 npx tsc --noEmit --noUnusedLocals --noUnusedParameters
 npm run test:edge
 npm run check:edge
@@ -48,6 +49,7 @@ Create two distinct email-confirmed dedicated QA users. Set securely:
 - EXPO_PUBLIC_SUPABASE_URL; EXPO_PUBLIC_SUPABASE_ANON_KEY (public client key only)
 - PROOFPILOT_TEST_EMAIL_A; PROOFPILOT_TEST_PASSWORD_A
 - PROOFPILOT_TEST_EMAIL_B; PROOFPILOT_TEST_PASSWORD_B
+- PROOFPILOT_STAGING_PROJECT_REF (the exact 20-character reference of the dedicated staging project; URL must equal its canonical https://REF.supabase.co URL)
 - PROOFPILOT_ALLOW_STAGING_TESTS=yes
 
 ```sh
@@ -93,7 +95,19 @@ After recording actual approvals in release CI, not merely to bypass the check:
 ```sh
 # Set securely: PROOFPILOT_LIVE_VERIFICATION_APPROVED=yes
 # Set securely: PROOFPILOT_DEVICE_VERIFICATION_APPROVED=yes
+# Set securely: PROOFPILOT_LEGAL_VERIFICATION_APPROVED=yes
 npm run check:release
 ```
 
-The gate verifies presence, not truth of approvals. It is not release authorization. Keep version 1.0.0; increment native build identifiers for subsequent uploads as required. No automatic submit or merge is authorized.
+The gate validates public URL/key types, native/EAS identifiers and approval presence, not actual project ownership, key validity, deployment or truth of approvals. It is not release authorization. Keep version 1.0.0; increment native build identifiers for subsequent uploads as required. No automatic submit or merge is authorized.
+
+
+## Continuation acceptance checklist
+
+- **VERIFIED:** local suites and native generation recorded in LAUNCH_AUDIT.md. No dependency upgrade or architecture rewrite in this continuation.
+- **REQUIRES CONFIGURATION:** explicitly identify staging reference before running test:live; configure public keys only. No script will discover or assume your production project. Review CLI link target before each migration/deployment command above.
+- **REQUIRES EXTERNAL SERVICE:** inject a lost final deletion response; verify server-side Storage/Auth/cascades directly using privileged operator tooling, not a failed sign-in as proof. Inject failed local credential deletion and file cleanup: a confirmed ledger must persist, retry must finish, and other accounts must remain intact. Test unconfirmed ledgers on restart: no cache hydration/sync or success UI. This remains a launch blocker until verified recovery/support is approved.
+- **REQUIRES REAL DEVICE:** Android and iOS generation passed locally; install signed builds to verify first-invalid-field focus/keyboard scrolling, native callback cancellation, secure-storage deletion errors, camera/files/sharing and accessibility. Android needs keystore/EAS and an actual Android device. iOS additionally needs Apple signing/provisioning and an actual iPhone/iPad. No signed binary/device result exists yet.
+- **REQUIRES HUMAN/LEGAL DECISION:** approve and exercise the private deletion-support procedure, policy/contact, retention and store disclosures; record LEGAL approval only after completing review.
+
+AI responses now label supplied context as user-provided; the model cannot supply the returned fact list. Generated answer/draft prose still requires human verification and must not be presented as verified extraction or guaranteed factual output. Provider response reading is capped at 64 KiB and five seconds, within the overall upstream timeout. Leave AI disabled until live quota, cancellation and provider-failure tests pass.

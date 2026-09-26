@@ -32,7 +32,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The tests cover initial empty state and navigation at 320, 375, 430, 768, 1024, 1280, and 1440 pixels. All 19 current browser tests passed in local Chromium, including populated workflows, axe scans, nested dialogs, file cleanup, two-tab saves and offline reload. This is not a screen-reader or real-device certification.
+The tests cover initial empty state and navigation at 320, 375, 430, 768, 1024, 1280, and 1440 pixels. All 24 current browser tests passed in local Chromium, including populated workflows, axe scans, nested dialogs, file cleanup, two-tab saves and offline reload. This is not a screen-reader or real-device certification.
 
 ## Architecture and sources of truth
 
