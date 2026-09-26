@@ -11,7 +11,7 @@ function migrateDocument(value: unknown, index: number): PurchaseDocument | null
   if (!value || typeof value !== 'object') return null;
   const row = value as Record<string, unknown>;
   const kind = kinds.includes(row.kind as DocumentKind) ? row.kind as DocumentKind : 'other';
-  return { id: text(row.id, `document-${index}`), name: text(row.name, 'Untitled document'), kind, mimeType: nullableText(row.mimeType), uri: nullableText(row.uri), content: nullableText(row.content), addedAt: validDate(row.addedAt) };
+  return { id: text(row.id, `document-${index}`), name: text(row.name, 'Untitled document'), kind, mimeType: nullableText(row.mimeType), uri: nullableText(row.uri), content: nullableText(row.content), addedAt: validDate(row.addedAt), ...(typeof row.sizeBytes === 'number' && Number.isSafeInteger(row.sizeBytes) && row.sizeBytes > 0 && row.sizeBytes <= 20971520 ? { sizeBytes: row.sizeBytes } : {}) };
 }
 function migrateDeadline(value: unknown, index: number): PurchaseDeadline | null {
   if (!value || typeof value !== 'object') return null;

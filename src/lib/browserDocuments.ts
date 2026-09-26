@@ -36,3 +36,8 @@ export async function readBrowserDocument(uri: string): Promise<Blob> {
   return blob;
 }
 export async function deleteBrowserDocument(uri: string) { await transaction('readwrite', store => store.delete(uri.slice(PREFIX.length))); }
+
+export async function listBrowserDocuments(): Promise<Array<{ uri: string; createdAt: number }>> {
+  const keys = await transaction('readonly', store => store.getAllKeys());
+  return keys.map(key => ({ uri: PREFIX + String(key), createdAt: Number(String(key).split('-')[0]) }));
+}

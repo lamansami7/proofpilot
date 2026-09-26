@@ -8,7 +8,7 @@ let assertions = 0;
 const check = (value, message) => { assert.ok(value, message); assertions++; };
 try {
   await db.exec(`
-    create role anon; create role authenticated;
+    create role anon; create role authenticated; create role service_role bypassrls;
     create schema auth; create schema storage;
     create table auth.users(id uuid primary key);
     create function auth.uid() returns uuid language sql stable as $$
@@ -17,6 +17,7 @@ try {
     create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
     create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text);
     alter table storage.objects enable row level security;
+    grant select,insert,update,delete on storage.objects to anon,authenticated;
     create function storage.foldername(text) returns text[] language sql immutable as $$ select string_to_array($1,'/') $$;
     grant usage on schema public,auth,storage to authenticated,anon;
     alter default privileges in schema public grant select,insert,update,delete on tables to authenticated;
@@ -36,11 +37,18 @@ try {
   const count = async table => Number((await db.query(`select count(*) as n from public.${table}`)).rows[0].n);
   const denied = async (operation, message) => { let failed = false; try { await operation(); } catch { failed = true; } check(failed,message); };
   await asUser(a);
+  await denied(() => db.exec("insert into public.categories(name) values ('Corrupted')"),'Users cannot mutate shared categories');
+  await denied(() => db.query('select public.save_purchase_record($1::jsonb)',[JSON.stringify({id:'negative',name:'Invalid',price:-1,documents:[],deadlines:[]})]),'Server rejects negative price');
+  await denied(() => db.query('select public.save_purchase_record($1::jsonb)',[JSON.stringify({id:'uri',name:'Invalid',documents:[{uri:'file:///private'}],deadlines:[]})]),'Server rejects local file paths');
+  await db.query("insert into storage.objects(bucket_id,name) values ('purchase-documents',$1)",[`${a}/receipt.pdf`]);
+  await denied(() => db.query("insert into storage.objects(bucket_id,name) values ('purchase-documents',$1)",[`${b}/injected.pdf`]),'A cannot upload into B storage prefix');
   await save('local-test'); await save('local-test','Retried');
   check(await count('purchases') === 1,'Save retry is idempotent');
   const pid = (await db.query('select id from public.purchases')).rows[0].id;
   await asUser(b);
   check(await count('purchases') === 0,'B cannot read A');
+  check((await db.query('select * from storage.objects')).rows.length===0,'B cannot read A storage objects');
+  await db.query('delete from storage.objects where name=$1',[`${a}/receipt.pdf`]);
   await denied(() => save(pid,'Attacker'),'B cannot overwrite A through RPC');
   await db.query('update public.purchases set product_name=$1 where id=$2',['Attacker',pid]);
   await db.query('select public.delete_purchase_record($1)',[pid]);
@@ -57,6 +65,16 @@ try {
   await save('fresh');
   await db.exec('delete from public.purchases');
   await denied(() => save('fresh'),'Direct table deletion also prevents resurrection');
+  // Service-only quotas cannot be forged by clients.
+  await denied(() => db.query('select public.reserve_ai_request($1)',[a]),'Authenticated user cannot reserve/modify server quota');
+  await db.exec('reset role; set role service_role');
+  for (let n=0;n<3;n++) check((await db.query('select public.reserve_ai_request($1) as ok',[a])).rows[0].ok,'Quota accepts bounded reservation');
+  check(!(await db.query('select public.reserve_ai_request($1) as ok',[a])).rows[0].ok,'Fourth request in minute is refused');
+  await db.query('insert into public.account_deletion_requests(user_id) values($1)',[a]);
+  await asUser(a);
+  await denied(() => save('during-delete'),'Account closure prevents new purchase writes');
+  await denied(() => db.query("insert into storage.objects(bucket_id,name) values ('purchase-documents',$1)",[`${a}/during-delete.pdf`]),'Closing account cannot upload new files');
+  await denied(() => db.exec('delete from public.account_deletion_requests'),'Client cannot cancel account closure');
   await asUser(b);
   check((await db.query("select record_id from public.purchase_tombstones where record_id='local-test'")).rows.length === 0,'B cannot read A tombstones');
   await save('account-cascade');

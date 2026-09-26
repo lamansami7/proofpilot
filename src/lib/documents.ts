@@ -1,6 +1,7 @@
 import { isOwnedDocumentUri, validateDocumentName, validateDocumentSize } from './documentValidation';
 import { deleteBrowserDocument, isBrowserDocument, readBrowserDocument, saveBrowserDocument } from './browserDocuments';
-import { Linking, Platform } from 'react-native';
+import { Platform } from 'react-native';
+import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import type { PurchaseDocument } from '../types/purchase';
 
@@ -49,9 +50,8 @@ export async function openDocumentFile(document: PurchaseDocument): Promise<bool
       return Boolean(opened);
     }
     if (!isOwnedDocumentUri(document.uri, FileSystem.documentDirectory)) return false;
-    const supported = await Linking.canOpenURL(document.uri);
-    if (!supported) return false;
-    await Linking.openURL(document.uri);
+    if (!(await FileSystem.getInfoAsync(document.uri)).exists || !await Sharing.isAvailableAsync()) return false;
+    await Sharing.shareAsync(document.uri, { mimeType: document.mimeType ?? undefined, dialogTitle: document.name });
     return true;
   } catch {
     return false;

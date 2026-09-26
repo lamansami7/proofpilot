@@ -12,6 +12,7 @@ const nativeStorage = {
 };
 export const supabase = url && anonKey ? createClient(url, anonKey, {
   auth: {
+    flowType: 'pkce',
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: Platform.OS === 'web',
