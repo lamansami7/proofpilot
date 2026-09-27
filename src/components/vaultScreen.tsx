@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { colors, radius, spacing, type, shadows } from '../design/tokens';
 import { deriveProtection, documentInventory, formatDate, type IndexedDocument } from '../lib/purchaseSelectors';
 import type { FeatherIconName, Purchase } from '../types/purchase';
-import { deleteDocumentFile } from '../lib/documents';
 import { Badge, Banner, Button, Card, Chip, EmptyState, IconButton, Input, PageHeader, Sheet } from './ui';
+import { PurchaseConflictError } from '../lib/localPurchaseStore';
 import { DocumentViewer, type ViewableDocument } from './documentViewer';
 
 export function VaultScreen({
@@ -17,7 +17,7 @@ export function VaultScreen({
   items: Purchase[];
   onAdd: () => void;
   onOpenPurchase: (purchase: Purchase) => void;
-  onUpdatePurchase: (purchase: Purchase) => Promise<void>;
+  onUpdatePurchase: (purchase: Purchase, expected?: Purchase) => Promise<void>;
 }) {
   const [viewing, setViewing] = useState<ViewableDocument | null>(null);
   const [pendingDelete, setPendingDelete] = useState<IndexedDocument | null>(null);
@@ -54,16 +54,12 @@ export function VaultScreen({
           warrantyEnd: document.purchase.warrantyEnd,
           hasReceipt,
         }),
-      });
+      }, document.purchase);
       if (viewing?.id === document.id) setViewing(null);
-      const shared = items.some((p) =>
-        p.documents.some((d) => d.uri && d.uri === document.uri && !(p.id === document.purchase.id && d.id === document.id)),
-      );
-      if (!shared)
-        await deleteDocumentFile(document).catch(() => setError('Record removed; the unused file could not be cleaned up on this device.'));
+      // File deletion is queued atomically with the record by the purchase store.
       setPendingDelete(null);
-    } catch {
-      setError('Nothing was deleted. The record could not be saved. Please retry.');
+    } catch (failure) {
+      setError(failure instanceof PurchaseConflictError ? 'The purchase changed in another window. Nothing was deleted. Choose Keep document, then reopen this confirmation to use the latest record.' : 'Nothing was deleted. The record could not be saved. Please retry.');
     } finally {
       setBusy(false);
     }
@@ -143,6 +139,7 @@ export function VaultScreen({
 
       {kind === 'all' || kind === 'receipt' ? (
         <DocumentSection
+          key={`Receipts:${query}:${kind}`}
           title="Receipts"
           detail="Proof of purchase — the backbone of every return and claim"
           documents={visible.receipts}
@@ -157,6 +154,7 @@ export function VaultScreen({
       ) : null}
       {kind === 'all' || kind === 'warranty' ? (
         <DocumentSection
+          key={`Warranty documents:${query}:${kind}`}
           title="Warranty documents"
           detail="Coverage terms and certificates"
           documents={visible.warranty}
@@ -171,6 +169,7 @@ export function VaultScreen({
       ) : null}
       {kind === 'all' || kind === 'manual' ? (
         <DocumentSection
+          key={`Product documents:${query}:${kind}`}
           title="Product documents"
           detail="Manuals, order confirmations, and anything else"
           documents={visible.product}
@@ -185,6 +184,7 @@ export function VaultScreen({
       ) : null}
       {kind === 'all' || kind === 'claim' ? (
         <DocumentSection
+          key={`Claim drafts:${query}:${kind}`}
           title="Claim drafts"
           detail="Editable drafts created with the Claim generator"
           documents={visible.claims}
@@ -255,6 +255,7 @@ function DocumentSection({
   onOpenPurchase: (purchase: Purchase) => void;
   onDelete: (d: IndexedDocument) => void;
 }) {
+  const [limit, setLimit] = useState(50);
   return (
     <View style={styles.section}>
       <View style={styles.sectionHead}>
@@ -266,8 +267,8 @@ function DocumentSection({
       </View>
       {documents.length ? (
         <Card style={styles.docCard}>
-          {documents.map((document, index) => (
-            <View key={document.id} style={[styles.documentRow, index > 0 && styles.documentRowBorder]}>
+          {documents.slice(0, limit).map((document, index) => (
+            <View key={JSON.stringify([document.purchase.id, document.id])} style={[styles.documentRow, index > 0 && styles.documentRowBorder]}>
               <View style={styles.docIcon}>
                 <Feather
                   name={document.kind === 'claim' ? 'file-text' : document.kind === 'receipt' ? 'credit-card' : document.kind === 'warranty' ? 'shield' : 'file'}
@@ -275,7 +276,7 @@ function DocumentSection({
                   color={colors.brandDark}
                 />
               </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={{ flex: 1, minWidth: 140 }}>
                 <Text numberOfLines={1} style={type.label}>
                   {document.name}
                 </Text>
@@ -290,6 +291,7 @@ function DocumentSection({
               <IconButton icon="trash-2" label={`Delete ${document.name}`} size={36} onPress={() => onDelete(document)} />
             </View>
           ))}
+          {documents.length > limit ? <Button label={`Show more ${title.toLowerCase()} (${limit} of ${documents.length} shown)`} variant="secondary" onPress={() => setLimit(value => value + 50)} style={{ margin: spacing.md }} /> : null}
         </Card>
       ) : (
         <Card style={styles.emptyCard}>

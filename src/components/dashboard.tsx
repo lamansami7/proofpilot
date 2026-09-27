@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { colors, radius, shadows, spacing, type } from '../design/tokens';
 import {
   actionNeeded,
@@ -119,14 +119,14 @@ export function Dashboard(props: DashboardProps) {
             message="Add a receipt or purchase details and ProofPilot will track its return window, warranty, and documents — ready the moment you need them."
             actionLabel="Protect a purchase"
             onAction={onAdd}
-            secondaryLabel="Load sample data"
-            onSecondary={onRestoreSamples}
+            secondaryLabel={__DEV__ ? "Load sample data" : undefined}
+            onSecondary={__DEV__ ? onRestoreSamples : undefined}
           />
           <Card style={styles.featureCard}>
             <Feature
               icon="corner-up-left"
-              title="Never miss a return window"
-              body="Return deadlines and warranty expirations are grouped by urgency in Deadline Radar."
+              title="Know your next deadline"
+              body="Your saved dates are grouped by urgency in Deadline Radar. No notifications are sent."
             />
             <Feature
               icon="archive"
@@ -237,7 +237,7 @@ export function Dashboard(props: DashboardProps) {
               />
               <View style={{ gap: spacing.sm }}>
                 {actions.slice(0, 5).map((action: ActionNeeded) => (
-                  <AttentionRow key={action.id} action={action} onPress={() => onOpen(action.purchase)} />
+                  <AttentionRow key={JSON.stringify([action.purchase.id, action.kind, action.id])} action={action} onPress={() => onOpen(action.purchase)} />
                 ))}
               </View>
             </View>
@@ -265,7 +265,7 @@ export function Dashboard(props: DashboardProps) {
               {upcoming.length ? (
                 <View style={{ gap: spacing.sm }}>
                   {upcoming.slice(0, 3).map((deadline: NormalizedDeadline) => (
-                    <DeadlineRow key={deadline.id} deadline={deadline} onPress={() => onOpen(deadline.purchase)} />
+                    <DeadlineRow key={JSON.stringify([deadline.purchase.id, deadline.id])} deadline={deadline} onPress={() => onOpen(deadline.purchase)} />
                   ))}
                 </View>
               ) : (
@@ -381,6 +381,7 @@ function ProtectionOverview({
         )}
       </View>
       <View
+        accessibilityRole="image"
         accessibilityLabel={`${summary.protected} protected, ${summary.attention} need attention, ${summary.unprotected} unprotected`}
         style={styles.progressTrack}
       >

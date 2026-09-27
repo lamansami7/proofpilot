@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
-import { colors, radius, spacing, type } from '../design/tokens';
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Feather } from './Feather';
+import { breakpoints, colors, radius, spacing, type } from '../design/tokens';
 import {
   filterPurchases,
   formatMoney,
@@ -30,13 +30,18 @@ export function PurchasesScreen({
   query,
   onAdd,
   onOpen,
+  onClearSearch,
 }: {
   items: Purchase[];
   total: number;
   query: string;
   onAdd: () => void;
   onOpen: (purchase: Purchase) => void;
+  onClearSearch?: () => void;
 }) {
+  const phone = useWindowDimensions().width <= breakpoints.phone;
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const showControls = !phone || filtersOpen;
   const [filters, setFilters] = useState<PurchaseFilters>(defaultFilters);
   const [sortKey, setSortKey] = useState<PurchaseSortKey>('date');
   const [direction, setDirection] = useState<SortDirection>('desc');
@@ -92,7 +97,8 @@ export function PurchasesScreen({
                 {filtersActive ? <View style={styles.dot} /> : null}
                 {filtersActive ? <Text style={[type.caption, { color: colors.brandDark, fontWeight: '700' }]}>Filters active</Text> : null}
               </View>
-              <View style={styles.sortRow}>
+              {phone ? <Button label="Filters & sort" variant="secondary" size="sm" icon={filtersOpen ? 'chevron-up' : 'sliders'} accessibilityExpanded={filtersOpen} onPress={() => setFiltersOpen(value => !value)} /> : null}
+              {showControls ? <View style={styles.sortRow}>
                 <Text style={type.caption}>Sort</Text>
                 {sortLabels.map(([value, label]) => (
                   <Chip
@@ -114,9 +120,10 @@ export function PurchasesScreen({
                   selected={false}
                   onPress={() => setDirection((c) => (c === 'asc' ? 'desc' : 'asc'))}
                 />
-              </View>
+              </View> : null}
             </View>
 
+            {showControls ? <>
             <View style={styles.filterRow}>
               {(
                 [
@@ -160,6 +167,7 @@ export function PurchasesScreen({
                 ))}
               </ScrollView>
             ) : null}
+            </> : null}
           </Card>
 
           {visible.length ? (
@@ -200,8 +208,8 @@ export function PurchasesScreen({
                 filters.protection !== 'all' ? ' · protection filter active' : '',
                 '.',
               ].join('')}
-              actionLabel={filtersActive || query ? 'Clear filters' : undefined}
-              onAction={filtersActive || query ? resetFilters : undefined}
+              actionLabel={query && onClearSearch ? 'Clear search and filters' : filtersActive ? 'Clear filters' : undefined}
+              onAction={filtersActive || (query && onClearSearch) ? () => { resetFilters(); if (query) onClearSearch?.(); } : undefined}
             />
           )}
         </>
@@ -215,7 +223,7 @@ const styles = StyleSheet.create({
   controlsTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md, flexWrap: 'wrap' },
   controlsMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
   dot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.brandStrong },
-  sortRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', alignItems: 'center' },
+  sortRow: { maxWidth: '100%', flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', alignItems: 'center' },
   filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, alignItems: 'center' },
   filterDivider: { width: 1, backgroundColor: colors.border, alignSelf: 'stretch', marginVertical: 2, minHeight: 24, borderRadius: radius.pill },
   categoryRow: { gap: spacing.sm, paddingVertical: 2 },

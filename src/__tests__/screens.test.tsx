@@ -5,6 +5,7 @@
 import React from 'react';
 import { Text } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
+import { Button } from '../components/ui';
 import { Dashboard } from '../components/dashboard';
 import { DeadlineRadar } from '../components/deadlineRadar';
 import { PurchasesScreen } from '../components/purchasesScreen';
@@ -78,6 +79,8 @@ describe('Purchases screen', () => {
   test('lists purchases with sort and filter controls', () => {
     const renderer = render(<PurchasesScreen {...props} items={items} />);
     expect(hasText(renderer, 'Samsung')).toBe(true);
+    const toggle = renderer.root.findAllByType(Button).find(button => button.props.label === 'Filters & sort');
+    if (toggle) { expect(toggle.props.accessibilityExpanded).toBe(false); act(() => toggle.props.onPress()); }
     expect(hasText(renderer, 'Sort')).toBe(true);
     expect(hasText(renderer, 'Pinned only')).toBe(true);
     expect(hasText(renderer, 'Reset filters') || hasText(renderer, 'of 3 items')).toBe(true);
@@ -163,6 +166,8 @@ describe('Purchase details', () => {
 
   test('surfaces protection, facts, and quick actions', () => {
     const renderer = render(<PurchaseDetails {...base} purchase={items[0]} />);
+    expect(hasText(renderer, 'Information you saved — not independently verified.')).toBe(true);
+    expect(hasText(renderer, 'Verified information')).toBe(false);
     expect(hasText(renderer, 'Proof of purchase')).toBe(true);
     expect(hasText(renderer, 'Return window')).toBe(true);
     expect(hasText(renderer, 'Warranty')).toBe(true);

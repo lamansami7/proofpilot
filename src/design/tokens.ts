@@ -41,7 +41,7 @@ export const colors = {
   success: '#2C6E49',
   successSurface: '#E8F4EB',
   successBorder: '#C5E6CC',
-  warning: '#A85F18',
+  warning: '#8F4E10',
   warningSurface: '#FFF1DF',
   warningBorder: '#FFE0B8',
   danger: '#B13F4B',
@@ -112,8 +112,8 @@ export const radius = {
 
 export const sizing = {
   touch: 44,
-  touchCompact: 38,
-  iconButton: 42,
+  touchCompact: 44,
+  iconButton: 44,
   sidebar: 248,
   sidebarCollapsed: 72,
   contentMax: 1220,

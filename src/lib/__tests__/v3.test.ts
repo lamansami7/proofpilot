@@ -64,8 +64,8 @@ describe('V3 design system tokens', () => {
     expect(type.heading.fontWeight).toBe('800');
     expect(type.eyebrow.letterSpacing as number).toBeGreaterThan(1);
     // V3 aliases
-    expect((type as any).pageTitle).toBeTruthy();
-    expect((type as any).sectionTitle).toBeTruthy();
+    expect((type).pageTitle).toBeTruthy();
+    expect((type).sectionTitle).toBeTruthy();
   });
 
   test('breakpoints cover phone to ultra', () => {
@@ -73,7 +73,7 @@ describe('V3 design system tokens', () => {
     expect(breakpoints.tablet).toBe(899);
     expect(breakpoints.desktop).toBe(1100);
     expect(breakpoints.wide).toBe(1280);
-    expect((breakpoints as any).ultra).toBe(1440);
+    expect((breakpoints).ultra).toBe(1440);
   });
 
   test('sizing tokens include touch targets and layout widths', () => {
@@ -96,8 +96,8 @@ describe('AppSettings with onboarding', () => {
   });
 
   test('rejects invalid onboarding value', () => {
-    expect(validateSettings({ onboardingCompleted: 'yes' as any }).onboardingCompleted).toBe(false);
-    expect(validateSettings({ onboardingCompleted: 1 as any }).onboardingCompleted).toBe(false);
+    expect(validateSettings({ onboardingCompleted: 'yes' }).onboardingCompleted).toBe(false);
+    expect(validateSettings({ onboardingCompleted: 1 }).onboardingCompleted).toBe(false);
   });
 
   test('validates return window boundaries', () => {

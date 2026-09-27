@@ -26,6 +26,7 @@ export type PurchaseDocument = {
   /** Inline text content for documents ProofPilot itself creates (e.g. claim drafts). */
   content?: string | null;
   addedAt?: string | null;
+  sizeBytes?: number | null;
 };
 
 export type Purchase = {

@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Platform, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { documentKindLabel, formatDate } from '../lib/purchaseSelectors';
+import * as FileSystem from 'expo-file-system';
+import { isAllowedDocumentUrl, isOwnedDocumentUri } from '../lib/documentValidation';
 import { openDocumentFile } from '../lib/documents';
 import { isBrowserDocument, readBrowserDocument } from '../lib/browserDocuments';
 import type { PurchaseDocument } from '../types/purchase';
@@ -19,7 +21,18 @@ export function DocumentViewer({ document, onClose }: { document: ViewableDocume
   const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'unavailable'>('idle');
   const [shared, setShared] = useState(false);
 
-  useEffect(() => { setCopied(false); setOpenFailed(false); setCopyError(false); setShared(false); }, [document?.id]);
+  const revision = useRef(0);
+  const pending = useRef<number | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    revision.current++; pending.current = null;
+    setBusy(false); setCopied(false); setOpenFailed(false); setCopyError(false); setShared(false);
+    return () => {
+      revision.current++;
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
+  }, [document?.id, document?.uri, document?.content]);
 
   // Resolve an imageable preview: object URLs for IndexedDB blobs, direct URIs elsewhere.
   useEffect(() => {
@@ -28,7 +41,7 @@ export function DocumentViewer({ document, onClose }: { document: ViewableDocume
     setPreviewUrl(null); setPreviewState('idle');
     const uri = document?.uri;
     if (!document || !uri || !isImageDoc(document)) return;
-    const direct = uri.startsWith('data:') || uri.startsWith('blob:') || (Platform.OS !== 'web' && uri.startsWith('file://'));
+    const direct = ((uri.startsWith('data:') || uri.startsWith('blob:')) && isAllowedDocumentUrl(uri)) || (Platform.OS !== 'web' && isOwnedDocumentUri(uri, FileSystem.documentDirectory));
     if (direct) { setPreviewUrl(uri); return; }
     if (Platform.OS === 'web' && isBrowserDocument(uri)) {
       setPreviewState('loading');
@@ -48,24 +61,34 @@ export function DocumentViewer({ document, onClose }: { document: ViewableDocume
 
   if (!document) return null;
 
-  const copy = async () => {
-    if (!document.content) return;
+  const actOnDocument = async (action: 'copy' | 'open' | 'share') => {
+    if (pending.current !== null) return;
+    const owner = ++revision.current;
+    pending.current = owner; setBusy(true); setOpenFailed(false); setCopyError(false);
+    const current = () => revision.current === owner;
     try {
-      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) { await navigator.clipboard.writeText(document.content); setCopied(true); setTimeout(() => setCopied(false), 2200); }
-      else { setCopyError(true); }
-    } catch { setCopyError(true); }
-  };
-
-  const open = async () => { setOpenFailed(false); const ok = await openDocumentFile(document); if (!ok) setOpenFailed(true); };
-
-  const share = async () => {
-    try {
-      if (document.content) { await Share.share({ title: document.name, message: document.content }); setShared(true); return; }
-      // Browsers have no native share sheet for local files — offer the download instead.
-      if (Platform.OS === 'web') { await open(); return; }
-      const ok = await openDocumentFile(document);
-      if (!ok) setOpenFailed(true); else setShared(true);
-    } catch { /* user cancelled */ }
+      if (action === 'copy') {
+        setCopied(false);
+        if (!document.content || Platform.OS !== 'web' || typeof navigator === 'undefined' || !navigator.clipboard) throw new Error('Clipboard unavailable');
+        await navigator.clipboard.writeText(document.content);
+        if (current()) {
+          setCopied(true);
+          if (copyTimer.current) clearTimeout(copyTimer.current);
+          copyTimer.current = setTimeout(() => { if (current()) setCopied(false); }, 2200);
+        }
+      } else if (action === 'share' && document.content) {
+        const result = await Share.share({ title: document.name, message: document.content });
+        if (current()) setShared(result.action === Share.sharedAction);
+      } else {
+        const ok = await openDocumentFile(document);
+        if (current()) { setOpenFailed(!ok); if (action === 'share') setShared(ok); }
+      }
+    } catch {
+      if (current()) { if (action === 'copy') setCopyError(true); else setOpenFailed(true); }
+    } finally {
+      if (pending.current === owner) pending.current = null;
+      if (current()) setBusy(false);
+    }
   };
 
   return (
@@ -73,11 +96,12 @@ export function DocumentViewer({ document, onClose }: { document: ViewableDocume
       <View style={styles.metaRow}>
         <Badge label={documentKindLabel(document.kind)} tone="brand" />
         {document.addedAt ? <Text style={type.caption}>Added {formatDate(document.addedAt)}</Text> : null}
+        {document.sizeBytes ? <Text style={type.caption}>{(document.sizeBytes / 1024).toFixed(1)} KB</Text> : null}
         {document.mimeType ? <Text style={type.caption}>{document.mimeType}</Text> : null}
       </View>
       {isImageDoc(document) && previewUrl ? (
         <View style={styles.previewFrame}>
-          <Image source={{ uri: previewUrl }} style={styles.previewImage} resizeMode="contain" accessibilityLabel={`Preview of ${document.name}`} />
+          <Image source={{ uri: previewUrl }} style={styles.previewImage} resizeMode="contain" accessibilityLabel={`Preview of ${document.name}`} onError={() => { setPreviewState('unavailable'); setPreviewUrl(null); }} />
         </View>
       ) : isImageDoc(document) && previewState === 'loading' ? (
         <View style={styles.previewLoading} accessibilityLiveRegion="polite">
@@ -91,14 +115,14 @@ export function DocumentViewer({ document, onClose }: { document: ViewableDocume
             <Text selectable style={styles.textContent}>{document.content}</Text>
           </ScrollView>
           {copyError ? <Text accessibilityRole="alert" style={type.bodySmall}>Clipboard unavailable. Select the text above to copy it manually.</Text> : null}
-          <Button label={copied ? 'Copied to clipboard' : 'Copy text'} icon={copied ? 'check' : 'copy'} variant="secondary" onPress={copy} style={{ marginTop: spacing.md }} fullWidth />
+          <Button label={copied ? 'Copied to clipboard' : 'Copy text'} icon={copied ? 'check' : 'copy'} variant="secondary" disabled={busy} onPress={() => actOnDocument('copy')} style={{ marginTop: spacing.md }} fullWidth />
         </>
       ) : document.uri ? (
         <>
           <Banner tone="info" icon="hard-drive" title="Stored on this device" message="This file was captured from your device and is not uploaded anywhere in this build." />
           <View style={styles.actionRow}>
-            <Button label={Platform.OS === 'web' ? 'Open / download file' : 'Open file'} icon="external-link" onPress={open} style={{ flex: 1 }} />
-            <Button label={shared ? 'Ready' : Platform.OS === 'web' ? 'Download' : 'Share'} icon={shared ? 'check' : 'share'} variant="secondary" onPress={share} style={{ flex: 1 }} />
+            <Button label={Platform.OS === 'web' ? 'Open / download file' : 'Open / share file'} icon="external-link" disabled={busy} onPress={() => actOnDocument('open')} style={{ flex: 1 }} />
+            {Platform.OS !== 'web' ? <Button label={shared ? 'Ready' : 'Share'} icon={shared ? 'check' : 'share'} variant="secondary" disabled={busy} onPress={() => actOnDocument('share')} style={{ flex: 1 }} /> : null}
           </View>
           {openFailed ? <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm }]}>This file can’t be opened right now — its local copy may have been cleared. Retry, or reattach the original from the purchase record.</Text> : null}
         </>

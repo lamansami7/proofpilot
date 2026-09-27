@@ -1,8 +1,11 @@
+import { AppErrorBoundary } from './src/components/appErrorBoundary';
+import { registerOfflineShell } from './src/lib/offlineShell';
+import { deleteCurrentAccount, resumeConfirmedPurges } from './src/lib/accountDeletion';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './src/components/Feather';
 import { StatusBar } from 'expo-status-bar';
-import { AuthScreen } from './src/components/authScreen';
+import { AuthScreen, PasswordRecovery } from './src/components/authScreen';
 import { Dashboard } from './src/components/dashboard';
 import { DeadlineRadar } from './src/components/deadlineRadar';
 import { PurchaseDetails } from './src/components/purchaseDetails';
@@ -34,9 +37,20 @@ type NavItem = { label: Tab; icon: FeatherIconName; badge?: number; muted?: bool
 type Toast = { message: string; tone: 'success' | 'danger' | 'info' };
 
 export default function App() {
+  return <AppErrorBoundary><ProofPilotApp /></AppErrorBoundary>;
+}
+
+function ProofPilotApp() {
+  const [offlineShellReady, setOfflineShellReady] = useState(false);
+  useEffect(() => { void registerOfflineShell().then(setOfflineShellReady); }, []);
+  const [purgeChecked, setPurgeChecked] = useState(false);
+  const [purgeError, setPurgeError] = useState(false);
+  const finishCleanup = () => resumeConfirmedPurges().then(result => { setPurgeError(result.unconfirmed > 0); }).catch(() => setPurgeError(true)).finally(() => setPurgeChecked(true));
+  useEffect(() => { void finishCleanup(); }, []);
+  const scrollRef = useRef<ScrollView>(null);
   const viewport = useBreakpoint();
   const session = useSession();
-  const store = usePurchaseStore(session.user?.id);
+  const store = usePurchaseStore(session.user?.id, purgeChecked && !purgeError);
   const { settings, update: persistSettings, hydrated: settingsReady, error: settingsError } = useAppSettings();
   const updateSettings = async (patch: Parameters<typeof persistSettings>[0]) => {
     await persistSettings(patch);
@@ -88,6 +102,11 @@ export default function App() {
   const aiConfigured = useMemo(() => createAIService().isConfigured, []);
   const userEmail = session.user?.email ?? null;
 
+  // Discard account-scoped UI state when identity changes, including open drafts.
+  useEffect(() => {
+    setSelectedId(null); setEditing(null); setFlowOpen(false); setQuery(''); setTab('Home'); setToast(null);
+  }, [session.user?.id]);
+
   const sampleVisible =
     items.some((item) => demoPurchases.some((demo) => demo.id === item.id)) && !settings.sampleBannerDismissed;
 
@@ -104,10 +123,10 @@ export default function App() {
     setFlowOpen(true);
   };
   const savePurchase = async (purchase: Purchase) => {
-    await store.upsert(purchase);
+    await store.upsert(purchase, Boolean(editing), editing ?? undefined);
     notify(editing ? 'Purchase record updated.' : `${purchase.name} was saved.`);
   };
-  const updatePurchase = (purchase: Purchase) => store.upsert(purchase);
+  const updatePurchase = (purchase: Purchase, expected?: Purchase) => store.upsert(purchase, true, expected);
   const deletePurchase = async (purchase: Purchase) => {
     try {
       await store.remove(purchase.id);
@@ -133,7 +152,7 @@ export default function App() {
   };
   const clearRecords = async (samplesOnly = false) => {
     try {
-      await store.replaceAll(samplesOnly ? items.filter((item) => !demoPurchases.some((d) => d.id === item.id)) : []);
+      await store.removeMany(items.filter(item => !samplesOnly || demoPurchases.some(demo => demo.id === item.id)).map(item => item.id));
       notify(
         samplesOnly ? 'Sample records cleared.' : 'Records deleted on this device. Cloud changes are queued when signed in.',
         'info',
@@ -144,6 +163,21 @@ export default function App() {
   };
 
   const showOnboarding = store.hydrated && settingsReady && items.length === 0 && !settings.onboardingCompleted;
+  useEffect(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); }, [tab, showOnboarding]);
+
+  if (!purgeChecked) return <SafeAreaView style={styles.app}><LoadingState label="Checking device cleanup…" /></SafeAreaView>;
+
+  if (purgeError) return (
+    <SafeAreaView style={styles.app}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: spacing.lg }}>
+        <View style={{ width: '100%', maxWidth: 560, alignSelf: 'center', gap: spacing.lg }}>
+          <Text accessibilityRole="header" style={type.title}>ProofPilot</Text>
+          <Banner tone="danger" icon="alert-circle" title="Device cleanup needs attention" message="Cloud deletion may have completed, but device cleanup is not confirmed. Keep this device private and retry. Contact private support to verify the account status before clearing site/app data. Clearing also removes other accounts’ local records and files; keep independent originals." />
+          <Button label="Retry device cleanup" onPress={() => { void finishCleanup(); }} />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
 
   if (session.configured && session.loading) {
     return (
@@ -162,11 +196,15 @@ export default function App() {
     );
   }
 
+  if (session.error) return <SafeAreaView style={styles.app}><Banner tone="danger" icon="alert-circle" title="Session unavailable" message={session.error} /><Button label="Retry session" onPress={session.retry} /></SafeAreaView>;
+  if (session.recovery) return <SafeAreaView style={styles.app}><PasswordRecovery onSave={session.updatePassword} /></SafeAreaView>;
+
   if (session.configured && !session.user) {
     return (
       <SafeAreaView style={styles.app}>
         <StatusBar style="dark" />
         <AuthScreen
+          onResetPassword={session.resetPassword}
           onSubmit={async (email, password, signUp) => {
             const { data, error } = signUp
               ? await session.signUp(email, password)
@@ -221,6 +259,7 @@ export default function App() {
             onAccount={() => setTab('Settings')}
           />
           <ScrollView
+            ref={scrollRef}
             contentContainerStyle={[styles.content, viewport.isPhone && styles.contentPhone]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -262,6 +301,7 @@ export default function App() {
                   </View>
                 ) : null}
 
+                {store.cleanupError ? <Banner tone="warning" icon="alert-circle" title="File cleanup pending" message={store.cleanupError}><Button label="Retry file cleanup" onPress={() => void store.retryCleanup()} variant="secondary" /></Banner> : null}
                 {/* Breadcrumb & sync status */}
                 <View style={styles.statusStrip}>
                   <Text accessibilityLabel={`Location: ${breadcrumb}`} numberOfLines={1} ellipsizeMode="tail" style={[type.caption, { flex: 1 }]}>
@@ -320,7 +360,7 @@ export default function App() {
                   />
                 ) : null}
                 {tab === 'Purchases' ? (
-                  <PurchasesScreen items={filtered} total={items.length} query={query} onAdd={openAddFlow} onOpen={openPurchase} />
+                  <PurchasesScreen onClearSearch={() => setQuery('')} items={filtered} total={items.length} query={query} onAdd={openAddFlow} onOpen={openPurchase} />
                 ) : null}
                 {tab === 'Deadlines' ? (
                   <DeadlineRadar onUpdate={updatePurchase} deadlines={deadlines} onOpenPurchase={openPurchase} onAdd={openAddFlow} />
@@ -343,8 +383,15 @@ export default function App() {
                     syncStatus={store.syncStatus}
                     syncError={store.syncError}
                     online={store.online}
+                    offlineShellReady={offlineShellReady}
                     onSignOut={() => session.signOut().catch(() => notify('Could not sign out. Try again.', 'danger'))}
                     onRestoreSamples={restoreSamples}
+                    onDeleteAccount={async password => {
+                      await store.suspend();
+                      try { const result = await deleteCurrentAccount(password); if (result.localCleanupPending) setPurgeError(true); }
+                      finally { await finishCleanup(); store.reload(); }
+                    }}
+                    onRestoreBackup={store.restoreBackup}
                     onDeleteAll={() => void clearRecords()}
                     onNotify={notify}
                   />
@@ -356,7 +403,7 @@ export default function App() {
         </View>
       </View>
 
-      {viewport.isPhone && !showOnboarding ? (
+      {viewport.isPhone && !showOnboarding && items.length > 0 && tab !== 'Settings' ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Protect a purchase"
@@ -439,7 +486,7 @@ function Sidebar({
           <Text style={styles.brandTag}>PURCHASE PROTECTION</Text>
         </View>
       </View>
-      <View style={styles.nav}>
+      <View accessibilityRole="tablist" accessibilityLabel="Main navigation" style={styles.nav}>
         {groups.map((group) => (
           <View key={group.label} style={styles.navGroup}>
             <Text style={styles.navGroupLabel}>{group.label}</Text>
@@ -450,6 +497,14 @@ function Sidebar({
                   key={item.label}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: selectedTab }}
+            tabIndex={selectedTab ? 0 : -1}
+            {...(Platform.OS === 'web' ? { onKeyDown: (event: React.KeyboardEvent) => {
+              const labels: Tab[] = ['Home','Purchases','Deadlines','Vault','Settings'];
+              const index = labels.indexOf(item.label);
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? labels.length - 1 : ['ArrowRight','ArrowDown'].includes(event.key) ? (index + 1) % labels.length : ['ArrowLeft','ArrowUp'].includes(event.key) ? (index + labels.length - 1) % labels.length : -1;
+              if (next >= 0) { event.preventDefault(); onSelect(labels[next]); (event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLElement>('[role="tab"]')[next])?.focus(); }
+            } } : {})}
+                  aria-selected={selectedTab}
                   onPress={() => onSelect(item.label)}
                   style={interactive([styles.navItem, selectedTab ? styles.navActive : null], {
                     hover: { backgroundColor: selectedTab ? colors.brandMuted : 'rgba(21,34,54,0.045)' },
@@ -583,7 +638,7 @@ function BottomNav({ active, onSelect, urgentCount }: { active: Tab; onSelect: (
     { label: 'Settings', icon: 'settings' },
   ];
   return (
-    <View style={styles.bottomNav}>
+    <View accessibilityRole="tablist" accessibilityLabel="Main navigation" style={styles.bottomNav}>
       {items.map((item) => {
         const selectedTab = active === item.label;
         return (
@@ -591,6 +646,14 @@ function BottomNav({ active, onSelect, urgentCount }: { active: Tab; onSelect: (
             key={item.label}
             accessibilityRole="tab"
             accessibilityState={{ selected: selectedTab }}
+            tabIndex={selectedTab ? 0 : -1}
+            {...(Platform.OS === 'web' ? { onKeyDown: (event: React.KeyboardEvent) => {
+              const labels: Tab[] = ['Home','Purchases','Deadlines','Vault','Settings'];
+              const index = labels.indexOf(item.label);
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? labels.length - 1 : ['ArrowRight','ArrowDown'].includes(event.key) ? (index + 1) % labels.length : ['ArrowLeft','ArrowUp'].includes(event.key) ? (index + labels.length - 1) % labels.length : -1;
+              if (next >= 0) { event.preventDefault(); onSelect(labels[next]); (event.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLElement>('[role="tab"]')[next])?.focus(); }
+            } } : {})}
+            aria-selected={selectedTab}
             onPress={() => onSelect(item.label)}
             style={interactive(styles.bottomItem, { hover: { backgroundColor: 'transparent' } })}
           >

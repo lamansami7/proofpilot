@@ -1,7 +1,7 @@
 import { contextFor } from '../services/ai/purchaseContext';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { createAIService, type AIService, type PurchaseAnswer } from '../services/ai/AIService';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { formatDate } from '../lib/purchaseSelectors';
@@ -42,27 +42,39 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
   const [question, setQuestion] = useState('');
   const [state, setState] = useState<'idle' | 'loading' | 'unavailable' | 'error'>('idle');
   const [lastQuestion, setLastQuestion] = useState('');
+  const inFlight = useRef(false);
+  const request = useRef(0);
+  useEffect(() => {
+    request.current++; inFlight.current = false;
+    setMessages([]); setQuestion(''); setLastQuestion(''); setState('idle');
+    return () => { request.current++; };
+  }, [purchase.id]);
   const known = useMemo(() => knownFacts(purchase), [purchase]);
   const missing = useMemo(() => missingFacts(purchase), [purchase]);
 
   const ask = async (value: string) => {
     const text = value.trim();
-    if (!text || state === 'loading') return;
+    if (!text || inFlight.current) return;
+    inFlight.current = true;
+    const owner = ++request.current;
+    const questionId = `question-${owner}`;
     setLastQuestion(text);
-    setMessages((items) => [...items, { id: `question-${Date.now()}`, role: 'user', text }]);
+    setMessages((items) => [...items, { id: questionId, role: 'user', text }]);
     setQuestion(''); setState('loading');
     try {
       const generated = await assistant.answerPurchaseQuestion(text, contextFor(purchase));
+      if (owner !== request.current) return;
       const answer = { ...generated, knownFacts: known.map(([label, value]) => `${label}: ${value}`) };
-      setMessages((items) => [...items, { id: `answer-${Date.now()}`, role: 'assistant', text: answer.answer, answer }]);
+      setMessages((items) => [...items, { id: `answer-${owner}`, role: 'assistant', text: answer.answer, answer }]);
       setState('idle');
     } catch (error) {
+      if (owner !== request.current) return;
       // Failed questions return to the composer — never fabricate a fallback answer,
       // and never leave a dangling unanswered message in the thread.
-      setMessages((items) => items.slice(0, -1));
-      setQuestion(text);
+      setMessages((items) => items.filter(item => item.id !== questionId));
+      setQuestion(current => current || text);
       setState(error instanceof Error && error.name === 'AIServiceError' && (error as { code?: string }).code === 'unavailable' ? 'unavailable' : 'error');
-    }
+    } finally { if (owner === request.current) inFlight.current = false; }
   };
 
   return (
@@ -145,7 +157,7 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
           ) : null}
           <View style={styles.composer}>
             <Input accessibilityLabel="Ask a question about this purchase" value={question} onChangeText={setQuestion} placeholder="Ask about this purchase" onSubmitEditing={() => ask(question)} returnKeyType="send" containerStyle={{ flex: 1 }} />
-            <Button label="Ask" icon="send" onPress={() => ask(question)} />
+            <Button label="Ask" loading={state === 'loading'} disabled={!question.trim()} icon="send" onPress={() => ask(question)} />
           </View>
         </>
       ) : (

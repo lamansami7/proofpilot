@@ -1,165 +1,89 @@
-# ProofPilot
+# ProofPilot 1.0.0
 
-**ProofPilot protects everything you buy.** An Expo / React Native + TypeScript app that keeps receipts, return windows, warranties, and purchase deadlines in one calm, organized place — with an AI assistant and claim drafts scoped to your saved purchase records (AI output must still be checked).
+ProofPilot organizes purchase records, local receipt files, user-entered return and warranty dates, and reviewable claim drafts. Expo / React Native / TypeScript, with optional Supabase account synchronization.
 
-## Features
+**Release status: NOT approved for public launch.** See [the launch audit](docs/LAUNCH_AUDIT.md) for verified work and unresolved release gates. A successful web export does not verify deployed services or native releases.
 
-- **Dashboard** — protection overview, items that need attention, upcoming deadlines, recent purchases, Vault snapshot, and the ProofPilot assistant entry point.
-- **Purchases** — searchable, sortable collection of everything you own.
-- **Add / edit purchase flow** — receipt scan or upload, manual entry with quick date chips, strict price validation, merchant/category suggestions, review step, and a success summary with protection status.
-- **Purchase record** — return window, warranty, product facts, documents, notes, Ask ProofPilot, and the Claim generator.
-- **Deadline Radar** — overdue / today / this week / this month / later, with search, filters, and sorting.
-- **Protection Vault** — receipts, warranty documents, product documents, and claim drafts, organized and openable.
-- **Ask ProofPilot & Claim generator** — scoped to your saved facts; clearly separate what is KNOWN from what is MISSING; drafts are editable, never sent automatically. If the secure AI service is not configured, the assistant explains that honestly; deterministic claim templates remain available.
-- **Local-first data** — purchases and settings persist on the device (AsyncStorage). Sample data seeds the first launch and can be cleared or restored in Settings.
-- **Supabase foundation** — auth screen, session handling, and a full RLS schema in `supabase/migrations` for cloud sync when configured.
-
-## Getting started
+## Run locally
 
 ```bash
-npm install
-npm start          # web (expo start --web)
-npm run android    # android
-npm run ios        # ios
+npm ci
+cp .env.example .env
+npm start
 ```
 
-### Optional configuration
+Leave integration variables empty for local-only operation. A fresh installation starts empty. Previously saved records are retained; sample loading is restricted to development builds. Production builds do not offer sample loading. Do not use samples as customer data.
 
-Copy `.env.example` to `.env`:
+```bash
+npm run lint
+npm test -- --runInBand
+npm run test:offline
+npm run test:migrations
+./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/tsc --noEmit --noUnusedLocals --noUnusedParameters
+npm run build:web
+npm run preview
+```
+
+The preview serves `dist/` on `0.0.0.0:8080`. Development commands for native platforms: `npm run android`, `npm run ios`. These are **not signed release builds**.
+
+Browser smoke tests (local-only export required):
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+The tests cover initial empty state and navigation at 320, 375, 430, 768, 1024, 1280, and 1440 pixels. All 56 current browser tests passed twice consecutively in local Chromium, including populated workflows, axe scans, nested dialogs, file cleanup, two-tab saves, stale-delete conflicts, settings propagation, cross-tab storage clearing, claim draft persistence and clipboard recovery, corrupt storage, offline reload, compact phone filters, and a real browser-process restart with byte-identical attachment download. See [the final release-hardening report](docs/FINAL_RELEASE_HARDENING_REPORT.md) for current evidence and limitations. This is not a screen-reader or real-device certification.
+
+## Architecture and sources of truth
+
+- **Local records:** serialized AsyncStorage snapshots; write success precedes UI success. Failed writes preserve the prior snapshot. Guest and signed-in accounts have separate keys. Records are not encrypted at rest by this application.
+- **Cloud records:** Supabase `purchases.record_data`, saved atomically through an RLS-governed RPC. Legacy relational rows remain readable; they are not a maintained reporting projection after a JSON record edit.
+- **Sync:** durable save/delete outboxes; initial, mutation, explicit retry, and browser reconnect attempts. Paginated reads and account-bound authentication per sync attempt. Last successful server write wins for edits; **permanent server deletion wins over stale offline edits**. Native connectivity and simultaneous multi-device edits still require integration testing.
+- **Deletions:** new tombstones prevent deleted IDs being resurrected. Restore uses new IDs. Tombstones are retained until account deletion. Pre-migration remote deletions cannot be reconstructed automatically.
+- **Documents:** original attachments are copied into IndexedDB on web or app-owned native files, up to 20 MB. Supported attachment formats: PDF, JPEG, PNG, GIF, WebP. No cloud binary backup. Cloud synchronization and JSON exports include metadata and inline claim text, not attachment bytes. Keep originals. Durable cleanup queues and a confirmation-time orphan rescan remove managed copies only; corrupt reference caches stop cleanup.
+- **Authentication:** Supabase Auth; native tokens use Expo SecureStore, browser sessions use browser storage. Session restoration can expose the matching local cache offline; RLS authenticates cloud operations. Web password-recovery UI exists but requires real email/redirect tests. Native PKCE recovery callbacks are implemented but require redirect configuration and device/email verification.
+- **AI:** optional HTTPS transport with user JWT, explicit user action, request bounds, timeout and manual retry. No provider secret in the app. A JWT-authenticated, quota-controlled Edge Function is included but not deployed or provider-tested. Leave the endpoint empty until live verification. No OCR or document extraction is implemented. Templates work without AI.
+- **Deadlines:** date-only calendar validation and calendar-day arithmetic. User-entered dates are not verified retailer policies. Completion does not change legal coverage.
+- **Notifications:** unavailable. Deadline Radar is a viewing surface, not a notification service.
+- **Payments:** none.
+
+## Environment
+
+Only public, client-safe values belong in Expo variables:
 
 | Variable | Purpose |
 | --- | --- |
-| `EXPO_PUBLIC_SUPABASE_URL` | Enables sign-in / cloud foundation |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Enables sign-in / cloud foundation |
-| `EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT` | Your trusted AI backend (`POST /purchase-question`, `POST /claim-draft`). Provider keys belong on that server, never in the app. |
+| `EXPO_PUBLIC_SUPABASE_URL` | Your HTTPS Supabase project URL |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase public anon/publishable client key; never service-role |
+| `EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT` | Optional trusted HTTPS backend base URL; requires Supabase sign-in |
 
-Without these, ProofPilot runs fully in local-first mode and says so wherever a cloud or AI feature would appear.
+Expo embeds these at build time. Never set provider secrets, service-role keys or private signing credentials in client variables.
 
-## Honesty rules this codebase follows
+## Database deployment
 
-- No fabricated statistics, dates, policies, or AI answers.
-- Features that are not wired up (notifications, receipt OCR, cloud document storage) say so in the UI.
-- Claims are drafts you review, edit, and send yourself. ProofPilot never sends anything.
-- No payments or billing of any kind in this build.
+On a fresh Supabase project apply these migrations in filename order:
 
-## Type check & build
+1. `202609230001_initial_schema.sql`
+2. `202609250001_atomic_purchase_records.sql`
+3. `202609260001_deletion_integrity.sql`
+4. `202609260002_service_controls.sql`
 
-```bash
-npx tsc --noEmit
-npx expo export --platform web
-```
+On an existing baseline project apply only unapplied migrations using Supabase migration history. Back up first. The third migration disables legacy household reads for purchase records (there is no consent/sharing UI), adds permanent owner-readable tombstones, guards resurrection, and tightens document re-parenting. **Deploy the migration before the new client.** Without it synchronization fails visibly and retains queued work.
 
-## September 2026 product upgrade
+The PostgreSQL test harness applies all migrations with minimal Auth/Storage schemas; it is not a substitute for the real Supabase test checklist in the launch audit.
 
-The Expo / React Native architecture is unchanged. This upgrade adds:
+## Backup / restore
 
-- A responsive forest-green dashboard hero, four live record metrics, readable protection overview, richer purchase cards, and phone navigation through 759px.
-- Protection filtering and next-deadline sorting alongside purchase search and categories.
-- Active/completed Deadline Radar views with persisted completion/reopening. Completing a task never changes coverage or submits a claim.
-- Proof-of-purchase summaries, strict monetary/calendar/chronology validation, and zero-price support.
-- Vault type filters, searchable document records, confirmed deletion, and recoverable file errors. Native files use app-owned storage; web files use IndexedDB (20 MB per file). Clearing browser/app data still removes local files. Keep originals.
-- Serialized, failure-aware local writes; account-isolated device caches; durable cloud save/delete queues with explicit retry and reconnect retry. Failed writes leave the previous saved state intact. Sample restoration adds missing examples without replacing your records.
-- Settings success is reported only after storage succeeds. Storage errors remain visible.
-- Saved-facts claim templates work without AI. Optional AI output is explicitly unverified, editable, and never submitted. Generated claims are excluded from document evidence in AI context.
+Settings exports schema-version-1 JSON with `schemaVersion`, `appVersion`, `exportedAt`, `documentsIncluded`, and `purchases`. Nested purchase records contain deadlines and document metadata/claim text. Local URIs and all attachment bytes are omitted. Native export writes a temporary JSON file for platform sharing and removes the temporary copy afterward; keep a separately saved copy.
 
-### Cloud upgrade deployment (required for configured Supabase builds)
+Restore accepts up to 5 MB / 5,000 records, validates IDs, dates, money, document and deadline records, then requires confirmation. It appends new IDs to the currently active account, does not overwrite existing records, and strips all imported URIs. Repeated restores create copies. An export from another account does not carry account ownership; confirmation explicitly assigns restored copies to the current account.
 
-Apply **both** migrations in `supabase/migrations`, in filename order, including
-`202609250001_atomic_purchase_records.sql`. The new migration adds `purchases.record_data`
-and authenticated, RLS-governed `save_purchase_record` / `delete_purchase_record` RPCs.
-Each save is one atomic transaction with an idempotent account-scoped ID; it no longer deletes
-and reinserts child tables over multiple HTTP requests. Existing relational records remain
-readable until edited. The application snapshot becomes authoritative for edited records;
-legacy child tables are not maintained as a reporting projection.
+## Privacy and release operations
 
-Document metadata and generated claim text sync in that record; device file locations and
-uploaded file bytes do not. A document on another device can therefore be metadata-only.
-Cloud failures (including a missing migration) retain the local outbox and show a retry action.
-Cloud fetches merge records without overwriting pending local edits or local file locations.
-Conflicting edits across devices use last successful server write; this is not collaborative
-merge. Remote-only deletion is not used to erase an existing device cache automatically.
+See [privacy disclosure draft](docs/PRIVACY.md), [launch audit / deployment gates](docs/LAUNCH_AUDIT.md), and [dependency review](docs/DEPENDENCY_SECURITY.md). Do not publish the privacy draft without the operator identity, contact channel, retention decisions and legal review. Never attach private exports or receipts to public GitHub issues.
 
-Guest records remain under the legacy device key; signed-in accounts have separate keys.
-There is no automatic import of guest data into an account, preventing accidental cross-account
-uploads. Export guest records before configuring cloud if you need a separate backup. JSON
-exports include record metadata and file references, **not** binary document backups.
+## Service deployment and release gates
 
-## Pre-launch product polish — toward 1.0.0
-
-The Expo / React Native architecture, Supabase foundation, and local-first behavior are
-unchanged. This pre-launch work focuses on product depth, honesty, and regression safety
-(treated internally as iterative polish toward the first public release):
-
-
-- **Dashboard** — every metric now comes from stored records only: total purchases, protected,
-  need attention, upcoming deadlines, expiring warranties (30 days), missing receipts, and
-  completed deadlines, plus an urgency-ordered "What needs your attention" list
-  (return deadlines → warranty expirations → missing proof → other dates).
-- **Purchases** — pinning (pinned records float to the top everywhere), sorting by date, name,
-  price, next deadline, and warranty end with direction control, receipt/pinned/category/
-  protection filters with one-click reset, an improved no-results state, and incremental
-  rendering ("Show more") so large collections stay fast.
-- **Purchase record** — pin/unpin, copy-record-summary quick action, and a next-deadline badge
-  next to the protection status.
-- **Deadline Radar** — "Overdue / expired" wording for past dates and a two-step confirmation
-  before marking a deadline completed (reopening stays one tap).
-- **Vault / document viewer** — in-app image previews (IndexedDB blobs resolved to object URLs
-  on web, file URIs on native), plus share/download actions. Failures keep the record and say
-  what happened.
-- **Claims** — a visible four-step workflow (verify facts → add issue → draft → review &
-  export), template vs. AI labeling on every draft, and a "Start over" action.
-- **Ask ProofPilot** — failed questions return to the composer with an explicit error and a
-  "Retry last question" button; answers render as paragraphs; unavailable AI states are stated
-  plainly and never filled with fabricated content.
-- **Settings** — five-state sync indicator (Local / Syncing / Synced / Error / Offline),
-  two-step sign-out confirmation, and a Support section linking to GitHub issues.
-- **Auth** — provider errors map to plain-language messages without inventing causes.
-- **Reliability** — store mutations (upsert/remove/replace/outbox) are pure, shared helpers
-  with tests for duplicate saves, tombstone revival, per-account storage isolation, and
-  bulk-replace semantics; the shell memoizes derived state.
-- **Accessibility** — removed nested interactive controls in attention rows, added labels to
-  new interactive surfaces, and kept touch targets ≥ 44px.
-- **Version 1.0.0** is declared once in `src/design/tokens.ts` (`APP_VERSION`) and mirrored in
-  `package.json` / `app.json` — the first public release will be 1.0.0. Internal polish does not bump the public major version.
-
-No new Supabase migration is required for this polish: pinning and all record edits travel inside the
-existing `record_data` JSONB column via `save_purchase_record`. Both migrations in
-`supabase/migrations` must still be applied for cloud sync to work at all.
-
-### Verification
-
-```bash
-npm test                 # unit + selector + store + screen render suites
-npx tsc --noEmit
-npx expo export --platform web
-git diff --check
-npm run preview          # production export on 0.0.0.0:8080
-```
-
-Tests cover calendar boundaries, completion, reopening, live protection, strict validation
-(including zero-price and malformed prices), concurrent writes, quota failures, recovery,
-durable outboxes, cloud merge preservation, per-account isolation, attention prioritization,
-purchase sort/filter behavior, pin migration, settings validation, auth error mapping,
-screen render states, and the AI trust boundary (malformed responses, template labeling,
-no fabricated answers). Live Supabase integration requires a configured project and applied
-migrations.
-
-### Known limitations (honest list)
-
-- Document **files** live only on the device that attached them (IndexedDB/app files);
-  clearing site/app data removes them. Cloud sync carries document metadata and claim text,
-  never file bytes.
-- Notifications are not wired up; Deadline Radar is the reminder surface. The app says so.
-- AI answers and drafts require a backend you operate (`EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT`);
-  when absent, ProofPilot explains that and offers deterministic templates.
-- Cross-device edits resolve by last successful server write — not collaborative merging.
-- Modal focus is not keyboard-trapped on web; Escape and backdrop dismissal work.
-
-## Versioning philosophy
-
-ProofPilot has not yet had a public launch. The public product version is **1.0.0**.
-
-- Before public launch, we make large internal improvements (design, UX, architecture, reliability, accessibility, performance, tests) and treat them as pre-launch polish — the code evolves, the customer still sees **1.0**.
-- The first time someone downloads ProofPilot they will see **ProofPilot 1.0** — mature and polished because we did the work before launch, not because we rushed version numbers.
-- After launch we use gradual semantic versioning: `1.0.0` first public release, `1.0.1`/`1.0.2` bug fixes, `1.1.0` meaningful feature, `1.2.0` next feature, `2.0.0` only for a genuinely major product transformation.
-- Internal development milestones (commits, redesigns, refactor passes) are not exposed as public major versions.
+See [operator runbook](OPERATOR_RUNBOOK.md) for exact commands, required configuration, and live acceptance checks. `npm run check:release` intentionally fails until real configuration and approvals exist. Public version remains 1.0.0. Account deletion and AI must remain disabled pending those checks.

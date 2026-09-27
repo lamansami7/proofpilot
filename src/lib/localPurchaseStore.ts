@@ -1,7 +1,8 @@
-import { migratePurchases } from './purchaseMigration';
+import { queueRemovedFiles } from './documentCleanup';
+import { migratePurchase, migratePurchases } from './purchaseMigration';
 import type { Purchase } from '../types/purchase';
 
-export type Snapshot = { version: 2; items: Purchase[]; pending: Array<Purchase['id']>; deleted: Array<Purchase['id']> };
+export type Snapshot = { version: 2; cleanup?: string[]; items: Purchase[]; pending: Array<Purchase['id']>; deleted: Array<Purchase['id']> };
 export const PURCHASE_STORAGE_KEY = 'proofpilot.v1.purchases';
 
 /** Signed-in accounts get an isolated storage slot; signed-out devices share the local slot. */
@@ -13,10 +14,39 @@ export const snapshotFor = (items: Purchase[] = []): Snapshot => ({ version: 2, 
 export function readSnapshot(raw: string | null): Snapshot {
   if (!raw) return snapshotFor();
   const value = JSON.parse(raw);
-  if (Array.isArray(value)) return snapshotFor(migratePurchases(value));
+  if (Array.isArray(value)) return snapshotFor(readItems(value));
   if (!value || value.version !== 2 || !Array.isArray(value.items) || !Array.isArray(value.pending) || !Array.isArray(value.deleted)) throw new Error('Unrecognized saved record format.');
-  const ids = (values: unknown[]) => values.filter((id): id is Purchase['id'] => typeof id === 'string' || typeof id === 'number');
-  return { version: 2, items: migratePurchases(value.items), pending: ids(value.pending), deleted: ids(value.deleted) };
+  const ids = (values: unknown[]) => {
+    if (values.some(id => !validId(id))) throw new Error('Unreadable pending changes; storage has not been overwritten.');
+    return values as Purchase['id'][];
+  };
+  if (value.cleanup !== undefined && (!Array.isArray(value.cleanup) || value.cleanup.some((uri: unknown) => typeof uri !== 'string'))) throw new Error('Unreadable cleanup queue.');
+  return { version: 2, items: readItems(value.items), pending: ids(value.pending), deleted: ids(value.deleted), ...(Array.isArray(value.cleanup) ? { cleanup: value.cleanup.filter((uri: unknown): uri is string => typeof uri === 'string') } : {}) };
+}
+
+const validId = (id: unknown): id is Purchase['id'] => (typeof id === 'string' && id.trim().length > 0) || (typeof id === 'number' && Number.isSafeInteger(id));
+/** Migration may normalize legacy fields, but a cache read must never silently drop records or files. */
+function readItems(rows: unknown[]): Purchase[] {
+  const migrated = migratePurchases(rows);
+  if (migrated.length !== rows.length) throw new Error('Unreadable purchase records; storage has not been overwritten.');
+  const ids = new Set<string>();
+  for (let index = 0; index < rows.length; index++) {
+    const raw = rows[index] as Record<string, unknown>;
+    const item = migrated[index];
+    if (!validId(item.id) || ids.has(String(item.id))) throw new Error('Invalid or duplicate purchase IDs.');
+    ids.add(String(item.id));
+    // Child IDs are scoped to a purchase, but must be unambiguous within it.
+    for (const children of [item.documents, item.deadlines]) {
+      const childIds = new Set<string>();
+      for (const child of children) {
+        if (!child.id.trim() || childIds.has(child.id)) throw new Error('Invalid or duplicate document/deadline IDs; storage has not been overwritten.');
+        childIds.add(child.id);
+      }
+    }
+    if (raw.documents !== undefined && (!Array.isArray(raw.documents) || raw.documents.length !== item.documents.length)) throw new Error('Unreadable document references.');
+    if (raw.deadlines !== undefined && (!Array.isArray(raw.deadlines) || raw.deadlines.length !== item.deadlines.length)) throw new Error('Unreadable deadlines.');
+  }
+  return migrated;
 }
 
 /** Cloud records never replace pending local work, and device files never leave this device. */
@@ -34,22 +64,39 @@ export function mergeCloud(snapshot: Snapshot, cloud: Purchase[]): Snapshot {
 export class LocalPurchaseStore {
   snapshot = snapshotFor();
   private queue: Promise<unknown> = Promise.resolve();
-  constructor(private write: (snapshot: Snapshot) => Promise<void>) {}
+  constructor(
+    private write: (snapshot: Snapshot) => Promise<void>,
+    private read?: () => Promise<Snapshot>,
+    private lock: (operation: () => Promise<Snapshot>) => Promise<Snapshot> = operation => operation(),
+  ) {}
+  async drain(): Promise<void> { await this.queue; }
   mutate(change: (current: Snapshot) => Snapshot): Promise<Snapshot> {
-    const operation = this.queue.then(async () => {
-      const next = change(this.snapshot);
-      await this.write(next);
+    const operation = this.queue.then(() => this.lock(async () => {
+      if (this.read) this.snapshot = await this.read();
+      const previous = JSON.stringify(this.snapshot);
+      const changed = change(this.snapshot);
+      // Reject invalid new snapshots before persisting or scheduling file cleanup.
+      readItems(changed.items);
+      const next = queueRemovedFiles(this.snapshot, changed);
+      if (JSON.stringify(next) !== previous) await this.write(next);
       this.snapshot = next;
       return next;
-    });
+    }));
     this.queue = operation.catch(() => undefined);
     return operation;
   }
 }
 
+export class PurchaseConflictError extends Error {}
+
 /** Insert-or-replace by id. Repeating the same save never duplicates a record. */
-export function upsertItem(snapshot: Snapshot, purchase: Purchase, signedIn: boolean): Snapshot {
-  const exists = snapshot.items.some((item) => item.id === purchase.id);
+export function upsertItem(snapshot: Snapshot, purchase: Purchase, signedIn: boolean, expected?: Purchase): Snapshot {
+  if (snapshot.deleted.includes(purchase.id)) throw new PurchaseConflictError('This purchase was deleted. Restore it with a new ID rather than overwriting a deletion.');
+  const current = snapshot.items.find(item => item.id === purchase.id);
+  if (expected && (expected.id !== purchase.id || !current || JSON.stringify(migratePurchase(current)) !== JSON.stringify(migratePurchase(expected)))) {
+    throw new PurchaseConflictError('This purchase changed in another window. Your draft was not saved. Reopen the record to review the latest changes.');
+  }
+  const exists = Boolean(current);
   return {
     ...snapshot,
     items: exists ? snapshot.items.map((item) => (item.id === purchase.id ? purchase : item)) : [purchase, ...snapshot.items],
@@ -65,7 +112,19 @@ export function removeItem(snapshot: Snapshot, id: Purchase['id'], signedIn: boo
     ...snapshot,
     items: snapshot.items.filter((item) => item.id !== id),
     pending: snapshot.pending.filter((value) => value !== id),
-    deleted: signedIn && existed ? [...new Set([...snapshot.deleted, id])] : snapshot.deleted.filter((value) => value !== id),
+    deleted: signedIn ? (existed ? [...new Set([...snapshot.deleted, id])] : snapshot.deleted) : snapshot.deleted.filter((value) => value !== id),
+  };
+}
+
+/** Delete only the explicitly selected IDs against the latest locked snapshot. */
+export function removeItems(snapshot: Snapshot, ids: Purchase['id'][], signedIn: boolean): Snapshot {
+  const removing = new Set(ids);
+  const removed = snapshot.items.filter(item => removing.has(item.id)).map(item => item.id);
+  return {
+    ...snapshot,
+    items: snapshot.items.filter(item => !removing.has(item.id)),
+    pending: snapshot.pending.filter(id => !removing.has(id)),
+    deleted: signedIn ? [...new Set([...snapshot.deleted, ...removed])] : snapshot.deleted.filter(id => !removing.has(id)),
   };
 }
 
@@ -75,9 +134,21 @@ export function replaceItems(snapshot: Snapshot, next: Purchase[], signedIn: boo
   const tombstones = new Set([...(signedIn ? snapshot.deleted : []), ...snapshot.items.filter((item) => !kept.has(item.id)).map((item) => item.id)]);
   kept.forEach((id) => tombstones.delete(id));
   return {
+    ...snapshot,
     version: 2,
     items: next,
     pending: signedIn ? next.map((item) => item.id) : [],
     deleted: signedIn ? [...tombstones] : [],
+  };
+}
+
+/** Permanent server tombstones win over stale device edits, including queued uploads. */
+export function applyRemoteDeletions(snapshot: Snapshot, deletedIds: string[]): Snapshot {
+  const deleted = new Set(deletedIds);
+  return {
+    ...snapshot,
+    items: snapshot.items.filter(item => !deleted.has(String(item.id))),
+    pending: snapshot.pending.filter(id => !deleted.has(String(id))),
+    deleted: snapshot.deleted.filter(id => !deleted.has(String(id))),
   };
 }

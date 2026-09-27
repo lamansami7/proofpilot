@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather } from './Feather';
 import { colors, radius, shadows, spacing, type } from '../design/tokens';
 import {
   deadlineTypeLabel,
@@ -22,7 +22,7 @@ const filters: Array<[Filter, string]> = [
   ['rebate', 'Rebates'],
   ['custom', 'Custom'],
 ];
-const groupOrder: Array<{ id: DeadlineGroup; title: string; detail: string; icon: string }> = [
+const groupOrder: Array<{ id: DeadlineGroup; title: string; detail: string; icon: React.ComponentProps<typeof Feather>['name'] }> = [
   { id: 'overdue', title: 'Overdue / expired', detail: 'Past the recorded date', icon: 'alert-circle' },
   { id: 'today', title: 'Today', detail: 'Due by midnight', icon: 'clock' },
   { id: 'week', title: 'This week', detail: 'Next 7 days', icon: 'calendar' },
@@ -49,7 +49,7 @@ export function DeadlineRadar({
   onUpdate,
 }: {
   deadlines: NormalizedDeadline[];
-  onUpdate: (purchase: Purchase) => Promise<void>;
+  onUpdate: (purchase: Purchase, expected?: Purchase) => Promise<void>;
   onOpenPurchase: (purchase: Purchase) => void;
   onAdd: () => void;
 }) {
@@ -59,6 +59,8 @@ export function DeadlineRadar({
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('urgency');
   const [query, setQuery] = useState('');
+  const [limit, setLimit] = useState(50);
+  useEffect(() => setLimit(50), [query, filter, sort, completed]);
   const [selected, setSelected] = useState<NormalizedDeadline | null>(null);
   const [confirmingComplete, setConfirmingComplete] = useState(false);
 
@@ -83,6 +85,7 @@ export function DeadlineRadar({
     [deadlines, filter, query, sort, completed],
   );
   const grouped = useMemo(() => groupDeadlines(filtered), [filtered]);
+  const shownCount = completed ? Math.min(limit, filtered.length) : Object.values(grouped).reduce((sum, group) => sum + Math.min(limit, group.length), 0);
   const counts = useMemo(() => groupDeadlines(deadlines.filter((d) => !d.completed)), [deadlines]);
   const overdueCount = counts.overdue.length + counts.today.length;
   const totalActive = deadlines.filter((d) => !d.completed).length;
@@ -172,9 +175,9 @@ export function DeadlineRadar({
         />
       ) : completed ? (
         <View style={styles.grid}>
-          {filtered.map((deadline) => (
+          {filtered.slice(0, limit).map((deadline) => (
             <DeadlineCard
-              key={`${deadline.purchase.id}-${deadline.id}`}
+              key={JSON.stringify([deadline.purchase.id, deadline.id])}
               deadline={deadline}
               onPress={() => {
                 setSelected(deadline);
@@ -192,7 +195,7 @@ export function DeadlineRadar({
               <View key={group.id} style={styles.group}>
                 <View style={styles.groupHeader}>
                   <View style={[styles.groupIcon, group.id === 'overdue' && styles.groupIconDanger, group.id === 'today' && styles.groupIconDanger]}>
-                    <Feather name={group.icon as any} size={14} color={group.id === 'overdue' || group.id === 'today' ? colors.danger : colors.muted} />
+                    <Feather name={group.icon} size={14} color={group.id === 'overdue' || group.id === 'today' ? colors.danger : colors.muted} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={type.heading}>{group.title}</Text>
@@ -201,9 +204,9 @@ export function DeadlineRadar({
                   <Badge label={String(grouped[group.id].length)} tone={group.id === 'overdue' || group.id === 'today' ? 'danger' : 'neutral'} />
                 </View>
                 <View style={styles.grid}>
-                  {grouped[group.id].map((deadline) => (
+                  {grouped[group.id].slice(0, limit).map((deadline) => (
                     <DeadlineCard
-                      key={deadline.id}
+                      key={JSON.stringify([deadline.purchase.id, deadline.id])}
                       deadline={deadline}
                       onPress={() => {
                         setSelected(deadline);
@@ -217,6 +220,8 @@ export function DeadlineRadar({
             ))}
         </View>
       )}
+
+      {shownCount < filtered.length ? <Button label={`Show more deadlines (${shownCount} of ${filtered.length} shown)`} variant="secondary" onPress={() => setLimit(value => value + 50)} style={{ marginTop: spacing.md }} /> : null}
 
       <Sheet
         visible={Boolean(selected)}
@@ -290,8 +295,7 @@ export function DeadlineRadar({
                   await onUpdate({
                     ...selected.purchase,
                     deadlines: selected.purchase.deadlines.map((d) => (d.id === selected.id ? { ...d, completed: !selected.completed } : d)),
-                  });
-                  setSelected(null);
+                  }, selected.purchase);
                   setConfirmingComplete(false);
                 } catch {
                   setError('Could not save. Your deadline has not changed. Try again.');

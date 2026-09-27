@@ -1,4 +1,4 @@
-import { LocalPurchaseStore, removeItem, replaceItems, snapshotFor, storageKeyFor, upsertItem } from '../localPurchaseStore';
+import { LocalPurchaseStore, removeItem, removeItems, replaceItems, snapshotFor, storageKeyFor, upsertItem } from '../localPurchaseStore';
 import type { Purchase } from '../../types/purchase';
 
 const item = (id: string, overrides: Partial<Purchase> = {}): Purchase => ({
@@ -39,12 +39,12 @@ describe('duplicate-safe record mutations', () => {
     const state = upsertItem(snapshotFor(), item('a'), false);
     expect(state.pending).toEqual([]);
   });
-  test('upserting revives a previously tombstoned record', () => {
+  test('upserting cannot revive a pending deletion', () => {
     const removed = removeItem(snapshotFor([item('a')]), 'a', true);
     expect(removed.deleted).toEqual(['a']);
-    const revived = upsertItem(removed, item('a'), true);
-    expect(revived.deleted).toEqual([]);
-    expect(revived.items).toHaveLength(1);
+    expect(() => upsertItem(removed, item('a'), true)).toThrow('deleted');
+    expect(removed.deleted).toEqual(['a']);
+    expect(removed.items).toHaveLength(0);
   });
   test('removing an unsynced record leaves no tombstone behind', () => {
     const state = removeItem(snapshotFor([item('a')]), 'a', false);
@@ -95,4 +95,39 @@ describe('serialized write queue', () => {
     await expect(store.mutate(s => upsertItem(s, item('a'), false))).rejects.toThrow('disk full');
     expect(store.snapshot.items).toEqual([]);
   });
+});
+
+test('repeated deletion retains the cloud outbox until acknowledgement', () => {
+  const first = removeItem(snapshotFor([item('a')]), 'a', true);
+  expect(removeItem(first, 'a', true)).toEqual(first);
+});
+
+test('stale same-record edit rejects instead of overwriting a newer tab', () => {
+  const original = item('a');
+  const newer = { ...original, notes: 'Saved by another tab' };
+  const state = snapshotFor([newer]);
+  expect(() => upsertItem(state, {...original, name:'Stale rename'},false,original)).toThrow('changed in another window');
+  expect(state.items).toEqual([newer]);
+});
+test('revision check accepts equivalent normalized records and current edits', () => {
+  const original = item('a');
+  const updated = {...original,name:'New name'};
+  expect(upsertItem(snapshotFor([original]),updated,false,{...original,protectionStatus:'protected'}).items).toEqual([updated]);
+});
+
+test('unchanged refreshes read current disk state without redundant storage writes',async()=>{
+ const write=jest.fn();const state=snapshotFor([item('a')]);const read=jest.fn(async()=>state);
+ const store=new LocalPurchaseStore(write,read);
+ await store.mutate(s=>s);await store.mutate(s=>({...s}));
+ expect(read).toHaveBeenCalledTimes(2);expect(write).not.toHaveBeenCalled();
+ await store.mutate(s=>upsertItem(s,{...item('a'),name:'Changed'},false));
+ expect(write).toHaveBeenCalledTimes(1);
+});
+
+test('selected bulk deletion preserves newer non-selected records and existing tombstones',()=>{
+ const state={...snapshotFor([item('sample'),item('real',{name:'Updated in another tab'}),item('new')]),deleted:['already-deleted']};
+ const result=removeItems(state,['sample'],true);
+ expect(result.items).toEqual([item('real',{name:'Updated in another tab'}),item('new')]);
+ expect(result.deleted).toEqual(['already-deleted','sample']);
+ expect(removeItems(result,['sample'],true)).toEqual(result);
 });
