@@ -1,0 +1,22 @@
+import React from 'react';
+import {act,create,ReactTestRenderer} from 'react-test-renderer';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import {SettingsScreen} from '../components/settingsScreen';
+import {Button} from '../components/ui';
+import {createBackup} from '../lib/backup';
+import {demoPurchases} from '../data/demoPurchases';
+jest.mock('expo-document-picker',()=>({getDocumentAsync:jest.fn()}));
+jest.mock('expo-file-system',()=>({readAsStringAsync:jest.fn()}));
+test('double confirmation imports exactly one set of new record IDs',async()=>{
+ const raw=JSON.stringify(createBackup([demoPurchases[0]]));
+ jest.mocked(DocumentPicker.getDocumentAsync).mockResolvedValue({canceled:false,assets:[{name:'backup.json',uri:'file:///backup.json',size:raw.length}]});
+ jest.mocked(FileSystem.readAsStringAsync).mockResolvedValue(raw);
+ let resolve!:()=>void;const restore=jest.fn(()=>new Promise<void>(yes=>{resolve=yes;}));let renderer!:ReactTestRenderer;
+ await act(async()=>{renderer=create(<SettingsScreen items={[]} settings={{defaultReturnWindowDays:30,sampleBannerDismissed:false,onboardingCompleted:true}} updateSettings={jest.fn()} userEmail={null} configured={false} syncStatus="local" syncError={null} online onSignOut={jest.fn()} onRestoreSamples={jest.fn()} onDeleteAll={jest.fn()} onNotify={jest.fn()} onRestoreBackup={restore}/>);});
+ const button=(name:string)=>renderer.root.findAllByType(Button).find(n=>n.props.label===name)!;
+ await act(async()=>{await button('Choose backup').props.onPress();});
+ const confirm=button('Confirm restore').props.onPress;let pending!:Promise<void>;
+ act(()=>{pending=confirm();void confirm();});expect(restore).toHaveBeenCalledTimes(1);
+ await act(async()=>{resolve();await pending;});act(()=>renderer.unmount());
+});

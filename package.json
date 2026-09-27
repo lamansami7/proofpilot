@@ -20,7 +20,9 @@
     "test:live": "node scripts/verify-live.mjs",
     "check:release": "node scripts/check-release.mjs",
     "measure:web": "node scripts/measure-web.mjs",
-    "test:release-config": "node --test scripts/release-config.test.mjs"
+    "test:release-config": "node --test scripts/release-config.test.mjs",
+    "test:offline": "node --test scripts/offline-shell.test.mjs",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",
@@ -46,14 +48,19 @@
     "@axe-core/playwright": "^4.13.0",
     "@babel/core": "^7.25.2",
     "@electric-sql/pglite": "^0.5.8",
+    "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.63.0",
     "@types/jest": "^30.0.0",
     "@types/react": "~18.3.12",
     "@types/react-native": "^0.73.0",
     "@types/react-test-renderer": "~18.3.0",
+    "eslint": "^9.39.5",
+    "fake-indexeddb": "^6.2.5",
+    "globals": "^16.5.0",
     "jest-expo": "~52.0.6",
     "patch-package": "^8.0.1",
-    "typescript": "~5.3.3"
+    "typescript": "~5.3.3",
+    "typescript-eslint": "^8.70.1"
   },
   "jest": {
     "preset": "jest-expo",

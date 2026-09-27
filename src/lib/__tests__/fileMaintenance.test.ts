@@ -16,3 +16,9 @@ test.each(['{', '{}', '{"version":2,"items":[{}]}'])('malformed cache stops dele
   await expect(removeUnreferencedFile('original')).rejects.toThrow();
   expect(deleteDocumentFile).not.toHaveBeenCalled();
 });
+
+test.each([[null],[{uri:42}]])('invalid document reference stops cleanup: %#', async document => {
+  await AsyncStorage.setItem(PURCHASE_STORAGE_KEY,JSON.stringify([{documents:[document]}]));
+  await expect(removeUnreferencedFile('original')).rejects.toThrow();
+  expect(deleteDocumentFile).not.toHaveBeenCalled();
+});

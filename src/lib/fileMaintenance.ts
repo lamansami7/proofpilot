@@ -17,7 +17,10 @@ export async function referencedFiles(excludingKey?: string): Promise<Set<string
     if (!Array.isArray(items)) throw new Error('Unreadable purchase cache; file cleanup stopped.');
     for (const item of items) {
       if (!item || !Array.isArray(item.documents)) throw new Error('Unreadable document references; file cleanup stopped.');
-      for (const document of item.documents) if (typeof document?.uri === 'string') refs.add(document.uri);
+      for (const document of item.documents) {
+        if (!document || typeof document !== 'object' || (document.uri != null && typeof document.uri !== 'string')) throw new Error('Unreadable file reference; cleanup stopped.');
+        if (typeof document.uri === 'string') refs.add(document.uri);
+      }
     }
   }
   return refs;

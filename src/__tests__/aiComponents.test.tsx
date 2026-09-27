@@ -7,7 +7,7 @@ import { Text, TextInput } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import { PurchaseAssistant } from '../components/purchaseAssistant';
 import { ClaimGenerator } from '../components/claimGenerator';
-import { AIServiceError, type AIService, type ClaimType } from '../services/ai/AIService';
+import { AIServiceError, type AIService, type PurchaseAnswer, type ClaimType } from '../services/ai/AIService';
 import { demoPurchases } from '../data/demoPurchases';
 import type { Purchase } from '../types/purchase';
 
@@ -126,4 +126,31 @@ describe('Claim generator trust boundary', () => {
     const draftType: ClaimType = 'return';
     expect(assistant.generateClaim).toHaveBeenCalledWith(expect.objectContaining({ productName: purchase.name }), draftType, undefined);
   });
+});
+
+test('failed AI question preserves a newer unsent composer draft',async()=>{
+ let reject!:(reason:Error)=>void;
+ const assistant=service({answerPurchaseQuestion:jest.fn(()=>new Promise((_resolve,no)=>{reject=no;}))});
+ let renderer!:TestRenderer.ReactTestRenderer;act(()=>{renderer=TestRenderer.create(<PurchaseAssistant purchase={purchase} assistant={assistant}/>);});
+ press(renderer,'Ask: Can I still return this?');
+ act(()=>renderer.root.findAllByType(TextInput).find(n=>n.props.accessibilityLabel==='Ask a question about this purchase')!.props.onChangeText('My next unsent question'));
+ await act(async()=>{reject(new Error('Network failed'));});
+ expect(renderer.root.findAllByType(TextInput).find(n=>n.props.accessibilityLabel==='Ask a question about this purchase')!.props.value).toBe('My next unsent question');
+ expect(hasText(renderer,'Retry last question')).toBe(true);act(()=>renderer.unmount());
+});
+test('duplicate assistant activation in one frame starts only one request',async()=>{
+ let resolve!:(value:PurchaseAnswer)=>void;const assistant=service({answerPurchaseQuestion:jest.fn(()=>new Promise(yes=>{resolve=yes;}))});
+ let renderer!:TestRenderer.ReactTestRenderer;act(()=>{renderer=TestRenderer.create(<PurchaseAssistant purchase={purchase} assistant={assistant}/>);});
+ const action=renderer.root.findAll(n=>n.props.accessibilityLabel==='Ask: Can I still return this?')[0].props.onPress;
+ act(()=>{action();action();});expect(assistant.answerPurchaseQuestion).toHaveBeenCalledTimes(1);
+ await act(async()=>{resolve({answer:'Saved facts only',knownFacts:[],missingInformation:[]});});act(()=>renderer.unmount());
+});
+
+test('a late answer cannot leak into a different purchase conversation',async()=>{
+ let resolve!:(value:PurchaseAnswer)=>void;const assistant=service({answerPurchaseQuestion:jest.fn(()=>new Promise(yes=>{resolve=yes;}))});
+ let renderer!:TestRenderer.ReactTestRenderer;act(()=>{renderer=TestRenderer.create(<PurchaseAssistant purchase={purchase} assistant={assistant}/>);});
+ press(renderer,'Ask: Can I still return this?');
+ act(()=>renderer.update(<PurchaseAssistant purchase={{...purchase,id:'different-purchase',name:'Another purchase',merchant:'Different merchant'}} assistant={assistant}/>));
+ await act(async()=>{resolve({answer:'Answer for the old record',knownFacts:[],missingInformation:[]});});
+ expect(hasText(renderer,'Answer for the old record')).toBe(false);expect(hasText(renderer,'Different merchant')).toBe(true);act(()=>renderer.unmount());
 });

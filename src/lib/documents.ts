@@ -1,4 +1,4 @@
-import { isOwnedDocumentUri, validateDocumentName, validateDocumentSize } from './documentValidation';
+import { DOCUMENT_MIME_TYPES, isAllowedDocumentUrl, isOwnedDocumentUri, validateDocumentName, validateDocumentSize } from './documentValidation';
 import { deleteBrowserDocument, isBrowserDocument, readBrowserDocument, saveBrowserDocument } from './browserDocuments';
 import { Platform } from 'react-native';
 import * as Sharing from 'expo-sharing';
@@ -44,7 +44,20 @@ export async function openDocumentFile(document: PurchaseDocument): Promise<bool
         setTimeout(() => URL.revokeObjectURL(url), 60000);
         return true;
       }
-      if (!/^(blob:|data:(application\/pdf|image\/)|https:\/\/)/.test(document.uri)) return false;
+      if (!isAllowedDocumentUrl(document.uri)) return false;
+      if (/^(blob:|data:)/i.test(document.uri)) {
+        const response = await fetch(document.uri);
+        if (!response.ok) return false;
+        const blob = await response.blob();
+        validateDocumentSize(blob.size);
+        if (!DOCUMENT_MIME_TYPES.includes(blob.type)) return false;
+        // Download legacy files, rather than navigating the app origin to a Blob.
+        const url = URL.createObjectURL(blob);
+        const anchor = window.document.createElement('a');
+        anchor.href = url; anchor.download = document.name; anchor.click();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        return true;
+      }
       const opened = window.open(document.uri, '_blank');
       if (opened) opened.opener = null;
       return Boolean(opened);

@@ -1,13 +1,13 @@
 import NetInfo from '@react-native-community/netinfo';
 import { withStorageLock } from '../lib/storageTransaction';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { removeUnreferencedFile } from '../lib/fileMaintenance';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { clientForAccount } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { demoPurchases } from '../data/demoPurchases';
 import { deletePurchase, listPurchases, listDeletedPurchases, savePurchase } from '../lib/purchaseRepository';
-import { LocalPurchaseStore, applyRemoteDeletions, mergeCloud, readSnapshot, removeItem, replaceItems, snapshotFor, storageKeyFor, upsertItem, type Snapshot } from '../lib/localPurchaseStore';
+import { PurchaseConflictError, LocalPurchaseStore, applyRemoteDeletions, mergeCloud, readSnapshot, removeItem, removeItems, replaceItems, snapshotFor, storageKeyFor, upsertItem, type Snapshot } from '../lib/localPurchaseStore';
 import type { Purchase } from '../types/purchase';
 
 export type SyncStatus = 'local' | 'syncing' | 'synced' | 'error';
@@ -67,7 +67,7 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
       const snapshot = await store.mutate(change);
       if (engine.current === store) { setItems(snapshot.items); setStorageError(null); void retryCleanup(); }
     } catch (error) {
-      if (engine.current === store) setStorageError('Could not save on this device. Your previous records are unchanged. Free some storage and retry.');
+      if (engine.current === store) setStorageError(error instanceof PurchaseConflictError ? error.message : 'Could not save on this device. Your previous records are unchanged. Check device storage and retry.');
       throw error;
     }
   }, [retryCleanup]);
@@ -114,7 +114,7 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
 
   useEffect(() => { if (hydrated) void retrySync(); }, [hydrated, retrySync]);
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
     const onlineEvent = () => { setOnline(true); void retrySync(); };
     const offlineEvent = () => setOnline(false);
     window.addEventListener('online', onlineEvent);
@@ -128,10 +128,10 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
       if (store) void publish(store, s => s).then(() => retrySync()).catch(() => undefined);
     };
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') refresh(); });
-    const updated = (event: StorageEvent) => { if (event.key === storageKeyFor(userId)) refresh(); };
+    const updated = (event: StorageEvent) => { if (event.key === storageKeyFor(userId) || event.key === null) refresh(); };
     // Do not write back a storage event: equal serialized snapshots generate no new browser event.
-    if (typeof window !== 'undefined') window.addEventListener('storage', updated);
-    return () => { subscription.remove(); if (typeof window !== 'undefined') window.removeEventListener('storage', updated); };
+    if (Platform.OS === 'web' && typeof window !== 'undefined') window.addEventListener('storage', updated);
+    return () => { subscription.remove(); if (Platform.OS === 'web' && typeof window !== 'undefined') window.removeEventListener('storage', updated); };
   }, [publish, retrySync, userId]);
 
   useEffect(() => NetInfo.addEventListener(state => {
@@ -149,14 +149,18 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
     void retrySync();
   }, [publish, retrySync, userId]);
   const signedIn = Boolean(userId);
-  const upsert = useCallback((purchase: Purchase) => change(s => upsertItem(s, purchase, signedIn)), [change, signedIn]);
+  const upsert = useCallback((purchase: Purchase, mustExist = false, expected?: Purchase) => change(s => {
+    if (mustExist && !s.items.some(item => item.id === purchase.id)) throw new PurchaseConflictError('This purchase was removed in another window. Refresh before editing.');
+    return upsertItem(s, purchase, signedIn, expected);
+  }), [change, signedIn]);
   const remove = useCallback((id: Purchase['id']) => change(s => removeItem(s, id, signedIn)), [change, signedIn]);
+  const removeMany = useCallback((ids: Purchase['id'][]) => change(s => removeItems(s, ids, signedIn)), [change, signedIn]);
   const replaceAll = useCallback((next: Purchase[]) => change(s => replaceItems(s, next, signedIn)), [change, signedIn]);
   const restoreBackup = useCallback((records: Purchase[]) => change(s => upsertEach(s, records, signedIn)), [change, signedIn]);
   const restoreSamples = useCallback(() => change(s => upsertEach(s, (__DEV__ ? demoPurchases : []).filter(demo => !s.items.some(item => item.id === demo.id)), signedIn)), [change, signedIn]);
   const suspend = async () => { const store = engine.current; engine.current = null; if (store) await store.drain(); };
   const reload = () => setGeneration(value => value + 1);
-  return { suspend, reload, items, hydrated, saving, storageError, cleanupError, retryCleanup, syncStatus, syncError, online, upsert, remove, replaceAll, restoreSamples, restoreBackup, retrySync };
+  return { suspend, reload, items, hydrated, saving, storageError, cleanupError, retryCleanup, syncStatus, syncError, online, upsert, remove, removeMany, replaceAll, restoreSamples, restoreBackup, retrySync };
 }
 
 /** Appends missing sample records without touching existing ones or queueing unchanged rows. */

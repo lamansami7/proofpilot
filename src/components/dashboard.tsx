@@ -237,7 +237,7 @@ export function Dashboard(props: DashboardProps) {
               />
               <View style={{ gap: spacing.sm }}>
                 {actions.slice(0, 5).map((action: ActionNeeded) => (
-                  <AttentionRow key={action.id} action={action} onPress={() => onOpen(action.purchase)} />
+                  <AttentionRow key={JSON.stringify([action.purchase.id, action.kind, action.id])} action={action} onPress={() => onOpen(action.purchase)} />
                 ))}
               </View>
             </View>
@@ -265,7 +265,7 @@ export function Dashboard(props: DashboardProps) {
               {upcoming.length ? (
                 <View style={{ gap: spacing.sm }}>
                   {upcoming.slice(0, 3).map((deadline: NormalizedDeadline) => (
-                    <DeadlineRow key={deadline.id} deadline={deadline} onPress={() => onOpen(deadline.purchase)} />
+                    <DeadlineRow key={JSON.stringify([deadline.purchase.id, deadline.id])} deadline={deadline} onPress={() => onOpen(deadline.purchase)} />
                   ))}
                 </View>
               ) : (

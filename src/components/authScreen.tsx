@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Feather } from './Feather';
 import { colors, shadows, spacing, type } from '../design/tokens';
@@ -13,10 +13,10 @@ export function friendlyAuthError(message: string): string {
   if (/invalid login credentials/i.test(text)) return 'Email or password is incorrect. Check them and try again.';
   if (/email not confirmed/i.test(text)) return 'Confirm your email first — open the confirmation link we sent, then sign in.';
   if (/already registered/i.test(text)) return 'An account with this email already exists. Sign in instead, or use a different email.';
-  if (/password.*(6|8)/i.test(text) || /at least/i.test(text)) return 'Password does not meet the minimum length. Use at least 8 characters.';
-  if (/rate|too many|429/i.test(text)) return 'Too many attempts. Wait a moment before trying again.';
+  if (/password.*(?:\b[68]\b|at least|minimum length)/i.test(text)) return 'Password does not meet the minimum length. Use at least 8 characters.';
+  if (/\brate[\s-]*limit|too many|\b429\b/i.test(text)) return 'Too many attempts. Wait a moment before trying again.';
   if (/network|fetch|failed to|timed? ?out/i.test(text)) return 'We could not reach the sign-in service. Check your connection and try again.';
-  if (/signup|sign.?up.*disabled/i.test(text)) return 'New account creation is disabled on this server.';
+  if (/(?:signup|sign.?up|registration).*(?:disabled|not allowed)/i.test(text)) return 'New account creation is disabled on this server.';
   return text.length <= 160 ? text : 'We could not continue. Check your connection and try again.';
 }
 
@@ -30,29 +30,34 @@ export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (e
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
 
+  const request = useRef(false);
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const submit = async () => {
+    if (request.current) return;
     const nextErrors: { email?: string; password?: string } = {};
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) nextErrors.email = 'Enter a valid email address.';
     if (signUp ? password.length < 8 : !password.length) nextErrors.password = signUp ? 'Use at least 8 characters.' : 'Enter your password.';
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
-    setLoading(true); setError(''); setInfo('');
+    request.current = true; setLoading(true); setError(''); setInfo('');
     try {
       const result = await onSubmit(email.trim(), password, signUp);
-      if (result && result.info) setInfo(result.info);
+      if (active.current && result && result.info) setInfo(result.info);
     } catch (e) {
-      setError(friendlyAuthError(e instanceof Error ? e.message : ''));
+      if (active.current) setError(friendlyAuthError(e instanceof Error ? e.message : ''));
     } finally {
-      setLoading(false);
+      request.current = false; if (active.current) setLoading(false);
     }
   };
 
   const resetPassword = async () => {
+    if (request.current || !onResetPassword) return;
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setFieldErrors({ email: 'Enter your email first.' }); return; }
-    setLoading(true); setError(''); setInfo('');
-    try { await onResetPassword?.(email.trim()); setInfo('If an account exists for this email, a password reset link will be sent.'); }
-    catch (e) { setError(friendlyAuthError(e instanceof Error ? e.message : '')); }
-    finally { setLoading(false); }
+    request.current = true; setLoading(true); setError(''); setInfo('');
+    try { await onResetPassword(email.trim()); if (active.current) setInfo('If an account exists for this email, a password reset link will be sent.'); }
+    catch (e) { if (active.current) setError(friendlyAuthError(e instanceof Error ? e.message : '')); }
+    finally { request.current = false; if (active.current) setLoading(false); }
   };
 
   return (
@@ -70,8 +75,8 @@ export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (e
         {info ? <View style={{ marginTop: spacing.lg }}><Banner tone="info" icon="mail" title="Check your inbox" message={info} /></View> : null}
         {error ? <View style={{ marginTop: spacing.lg }}><Banner tone="danger" icon="alert-circle" title="We couldn’t sign you in" message={error} /></View> : null}
         <View style={styles.form}>
-          <Input label="EMAIL" value={email} onChangeText={(value) => { setEmail(value); setFieldErrors((current) => ({ ...current, email: undefined })); }} autoCapitalize="none" keyboardType="email-address" autoComplete="email" error={fieldErrors.email} />
-          <Input label="PASSWORD" value={password} onChangeText={(value) => { setPassword(value); setFieldErrors((current) => ({ ...current, password: undefined })); }} secureTextEntry autoComplete={signUp ? 'new-password' : 'password'} error={fieldErrors.password} hint={signUp ? 'At least 8 characters' : undefined} />
+          <Input editable={!loading} label="EMAIL" value={email} onChangeText={(value) => { setEmail(value); setFieldErrors((current) => ({ ...current, email: undefined })); }} autoCapitalize="none" keyboardType="email-address" autoComplete="email" error={fieldErrors.email} />
+          <Input editable={!loading} label="PASSWORD" value={password} onChangeText={(value) => { setPassword(value); setFieldErrors((current) => ({ ...current, password: undefined })); }} secureTextEntry autoComplete={signUp ? 'new-password' : 'password'} error={fieldErrors.password} hint={signUp ? 'At least 8 characters' : undefined} />
           <Button label={loading ? 'Please wait…' : signUp ? 'Create account' : 'Sign in'} onPress={submit} icon="arrow-right" loading={loading} fullWidth />
         </View>
         {onResetPassword && !signUp ? <Button label="Forgot password?" variant="ghost" onPress={resetPassword} disabled={loading} fullWidth /> : null}
@@ -96,16 +101,20 @@ export function PasswordRecovery({ onSave }: { onSave: (password: string) => Pro
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const request = useRef(false);
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const save = async () => {
+    if (request.current) return;
     if (password.length < 8) { setError('Use at least 8 characters.'); return; }
-    setBusy(true); setError('');
+    request.current = true; setBusy(true); setError('');
     try { await onSave(password); }
-    catch { setError('Password was not changed. Retry or request a new recovery link.'); }
-    finally { setBusy(false); }
+    catch { if (active.current) setError('Password change could not be confirmed. Retry or request a new recovery link.'); }
+    finally { request.current = false; if (active.current) setBusy(false); }
   };
   return <View style={styles.page}><Card style={styles.card}>
     <Text style={type.heading}>Choose a new password</Text>
-    <Input label="NEW PASSWORD" secureTextEntry autoComplete="new-password" value={password} onChangeText={setPassword} error={error} />
+    <Input editable={!busy} label="NEW PASSWORD" secureTextEntry autoComplete="new-password" value={password} onChangeText={setPassword} error={error} />
     <Button label="Save new password" onPress={save} loading={busy} />
   </Card></View>;
 }

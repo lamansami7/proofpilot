@@ -1,3 +1,4 @@
+import { AppErrorBoundary } from './src/components/appErrorBoundary';
 import { registerOfflineShell } from './src/lib/offlineShell';
 import { deleteCurrentAccount, resumeConfirmedPurges } from './src/lib/accountDeletion';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -36,6 +37,10 @@ type NavItem = { label: Tab; icon: FeatherIconName; badge?: number; muted?: bool
 type Toast = { message: string; tone: 'success' | 'danger' | 'info' };
 
 export default function App() {
+  return <AppErrorBoundary><ProofPilotApp /></AppErrorBoundary>;
+}
+
+function ProofPilotApp() {
   const [offlineShellReady, setOfflineShellReady] = useState(false);
   useEffect(() => { void registerOfflineShell().then(setOfflineShellReady); }, []);
   const [purgeChecked, setPurgeChecked] = useState(false);
@@ -118,10 +123,10 @@ export default function App() {
     setFlowOpen(true);
   };
   const savePurchase = async (purchase: Purchase) => {
-    await store.upsert(purchase);
+    await store.upsert(purchase, Boolean(editing), editing ?? undefined);
     notify(editing ? 'Purchase record updated.' : `${purchase.name} was saved.`);
   };
-  const updatePurchase = (purchase: Purchase) => store.upsert(purchase);
+  const updatePurchase = (purchase: Purchase, expected?: Purchase) => store.upsert(purchase, true, expected);
   const deletePurchase = async (purchase: Purchase) => {
     try {
       await store.remove(purchase.id);
@@ -147,7 +152,7 @@ export default function App() {
   };
   const clearRecords = async (samplesOnly = false) => {
     try {
-      await store.replaceAll(samplesOnly ? items.filter((item) => !demoPurchases.some((d) => d.id === item.id)) : []);
+      await store.removeMany(items.filter(item => !samplesOnly || demoPurchases.some(demo => demo.id === item.id)).map(item => item.id));
       notify(
         samplesOnly ? 'Sample records cleared.' : 'Records deleted on this device. Cloud changes are queued when signed in.',
         'info',
@@ -355,7 +360,7 @@ export default function App() {
                   />
                 ) : null}
                 {tab === 'Purchases' ? (
-                  <PurchasesScreen items={filtered} total={items.length} query={query} onAdd={openAddFlow} onOpen={openPurchase} />
+                  <PurchasesScreen onClearSearch={() => setQuery('')} items={filtered} total={items.length} query={query} onAdd={openAddFlow} onOpen={openPurchase} />
                 ) : null}
                 {tab === 'Deadlines' ? (
                   <DeadlineRadar onUpdate={updatePurchase} deadlines={deadlines} onOpenPurchase={openPurchase} onAdd={openAddFlow} />

@@ -28,7 +28,7 @@ export async function listPurchases(client = supabase): Promise<Purchase[]> {
 /** One RPC / transaction; deterministic server IDs make retries idempotent. */
 export async function savePurchase(purchase: Purchase, client = supabase): Promise<Purchase> {
   if (!client) throw new Error('Supabase is not configured.');
-  const record = { ...purchase, documents: purchase.documents.map(({ uri, ...document }) => document) };
+  const record = { ...purchase, documents: purchase.documents.map(({ uri: _uri, ...document }) => document) };
   const { error } = await client.rpc('save_purchase_record', { record });
   if (error) throw error;
   return purchase;

@@ -7,7 +7,7 @@ import { PurchasesScreen } from '../components/purchasesScreen';
 import { VaultScreen } from '../components/vaultScreen';
 import { DeadlineRadar } from '../components/deadlineRadar';
 import { PurchaseDetails } from '../components/purchaseDetails';
-import { Card, Badge, EmptyState, LoadingState, ErrorState, Skeleton, Banner } from '../components/ui';
+import { Button, Card, Badge, EmptyState, LoadingState, ErrorState, Skeleton, Banner } from '../components/ui';
 import { demoPurchases } from '../data/demoPurchases';
 import type { Purchase } from '../types/purchase';
 
@@ -136,7 +136,7 @@ describe('DeadlineRadar V3 command center', () => {
   test('shows need action pills', () => {
     const now = new Date();
     const soon = new Date(now.getTime() + 2 * 86_400_000).toISOString().slice(0, 10);
-    const deadline = { ...items[0].deadlines[0], date: soon, completed: false } as any;
+    const deadline = { ...items[0].deadlines[0], date: soon, completed: false };
     const renderer = render(
       <DeadlineRadar
         deadlines={[{ ...deadline, purchase: items[0], days: 2, status: 'urgent' as const }]}
@@ -163,6 +163,8 @@ describe('PurchaseDetails V3 timeline', () => {
 describe('PurchasesScreen V3 filtering', () => {
   test('shows filter bar and sort controls', () => {
     const renderer = render(<PurchasesScreen items={items} total={items.length} query="" onAdd={noop} onOpen={noop} />);
+    const toggle = renderer.root.findAllByType(Button).find(button => button.props.label === 'Filters & sort');
+    if (toggle) { expect(toggle.props.accessibilityExpanded).toBe(false); act(() => toggle.props.onPress()); }
     expect(hasText(renderer, 'All protection') || hasText(renderer, 'Protected')).toBe(true);
     expect(hasText(renderer, 'Sort')).toBe(true);
     expect(hasText(renderer, 'Filters active') || hasText(renderer, 'Reset')).toBe(false); // no filters initially

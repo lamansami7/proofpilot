@@ -53,3 +53,15 @@ test('late initial deep link cannot authenticate after the session hook unmounts
   expect(mockAuth.exchangeCodeForSession).not.toHaveBeenCalled();
   initial.mockRestore();
 });
+
+test('successful delayed session restoration clears the earlier timeout error',async()=>{
+ const initial=jest.spyOn(Linking,'getInitialURL').mockResolvedValue(null);
+ jest.useFakeTimers();
+ try {
+  let resolve!:(value:unknown)=>void;mockAuth.getSession.mockReturnValue(new Promise(yes=>{resolve=yes;}));
+  await act(async()=>{renderer=create(<Harness/>);});
+  act(()=>jest.advanceTimersByTime(15000));expect(current.error).toContain('timed out');
+  await act(async()=>{resolve({data:{session:{user:{id:'owner'}}},error:null});});
+  expect(current.user?.id).toBe('owner');expect(current.error).toBeNull();expect(current.loading).toBe(false);
+ } finally {jest.useRealTimers();initial.mockRestore();}
+});

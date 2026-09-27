@@ -54,6 +54,7 @@ type ButtonProps = {
   disabled?: boolean;
   fullWidth?: boolean;
   accessibilityLabel?: string;
+  accessibilityExpanded?: boolean;
   style?: ViewStyle;
 };
 export function Button({
@@ -66,6 +67,7 @@ export function Button({
   disabled,
   fullWidth,
   accessibilityLabel,
+  accessibilityExpanded,
   style,
 }: ButtonProps) {
   const base: ViewStyle = {
@@ -98,9 +100,10 @@ export function Button({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
+      accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading), expanded: accessibilityExpanded }}
       aria-disabled={Boolean(disabled || loading)}
       aria-busy={Boolean(loading)}
+      aria-expanded={accessibilityExpanded}
       accessibilityHint={loading ? 'Loading' : undefined}
       hitSlop={2}
       disabled={disabled || loading}
@@ -251,7 +254,7 @@ export function PageHeader({
   return (
     <View style={[styles.pageHeader, compact && { flexDirection: 'column', alignItems: 'stretch' }]}>
       <View style={{ flex: compact ? undefined : 1, minWidth: compact ? 0 : 240 }}>
-        {eyebrow ? <Text style={type.eyebrow}>{eyebrow}</Text> : null}
+        {eyebrow ? <Text numberOfLines={2} style={type.eyebrow}>{eyebrow}</Text> : null}
         <Text accessibilityRole="header" style={type.display}>{title}</Text>
         {description ? <Text style={[type.body, styles.pageHeaderDesc]}>{description}</Text> : null}
       </View>
@@ -487,9 +490,9 @@ export function Sheet({
           <View style={styles.sheetGrabber} />
           <View style={styles.sheetHeaderRow}>
             <View style={{ flex: 1, minWidth: 0 }}>
-              {eyebrow ? <Text style={type.eyebrow}>{eyebrow}</Text> : null}
-              {title ? <Text style={type.heading}>{title}</Text> : null}
-              {subtitle ? <Text style={[type.bodySmall, { marginTop: 2 }]}>{subtitle}</Text> : null}
+              {eyebrow ? <Text numberOfLines={2} style={type.eyebrow}>{eyebrow}</Text> : null}
+              {title ? <Text accessibilityRole="header" numberOfLines={3} style={type.heading}>{title}</Text> : null}
+              {subtitle ? <Text numberOfLines={2} style={[type.bodySmall, { marginTop: 2 }]}>{subtitle}</Text> : null}
             </View>
             <IconButton icon="x" label="Close dialog" onPress={onClose} tone="ghost" />
           </View>
@@ -640,8 +643,8 @@ export function ErrorState({
 // ---------------------------------------------------------------------------
 // Skeleton — restrained, accessible
 // ---------------------------------------------------------------------------
-export function Skeleton({ width, height, radius: r = 8, style }: { width?: number | string; height: number; radius?: number; style?: ViewStyle }) {
-  return <View style={[{ width: width as any, height, borderRadius: r, backgroundColor: colors.surfaceMuted, opacity: 0.9 }, style]} />;
+export function Skeleton({ width, height, radius: r = 8, style }: { width?: ViewStyle['width']; height: number; radius?: number; style?: ViewStyle }) {
+  return <View style={[{ width, height, borderRadius: r, backgroundColor: colors.surfaceMuted, opacity: 0.9 }, style]} />;
 }
 
 export function SkeletonCard() {
@@ -708,6 +711,8 @@ const styles = StyleSheet.create({
   },
   cardHover: { borderColor: colors.borderStrong, ...shadows.raised },
   badge: {
+    maxWidth: '100%',
+    flexShrink: 1,
     alignSelf: 'flex-start',
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm + 2,
@@ -716,7 +721,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  badgeText: { fontSize: 11, lineHeight: 14, fontWeight: '800' },
+  badgeText: { flexShrink: 1, fontSize: 11, lineHeight: 14, fontWeight: '800' },
   badge_success: { backgroundColor: colors.successSurface, borderWidth: 1, borderColor: colors.successBorder },
   badgeText_success: { color: colors.success },
   badge_warning: { backgroundColor: colors.warningSurface, borderWidth: 1, borderColor: colors.warningBorder },

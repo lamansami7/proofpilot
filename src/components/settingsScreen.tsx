@@ -4,7 +4,7 @@ import * as Sharing from 'expo-sharing';
 import { findUnusedFiles, deleteUnusedFiles } from '../lib/fileMaintenance';
 import * as FileSystem from 'expo-file-system';
 import { createBackup, parseBackup, prepareRestoration, MAX_BACKUP_BYTES } from '../lib/backup';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Linking, Platform, StyleSheet, Text, View } from 'react-native';
 import { Feather } from './Feather';
 import { APP_VERSION, colors, radius, spacing, type } from '../design/tokens';
@@ -44,9 +44,19 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
   const [maintenanceBusy, setMaintenanceBusy] = useState(false);
   const [restore, setRestore] = useState<Purchase[] | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const restoreLock = useRef(false);
+  const selectionLock = useRef(false);
+  const exportLock = useRef(false);
+  const active = useRef(true);
+  const [choosingBackup, setChoosingBackup] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const [returnDays, setReturnDays] = useState(String(settings.defaultReturnWindowDays));
   const [saving, setSaving] = useState(false);
-  useEffect(() => setReturnDays(String(settings.defaultReturnWindowDays)), [settings.defaultReturnWindowDays]);
+  const [returnDaysDirty, setReturnDaysDirty] = useState(false);
+  const returnRevision = useRef(0);
+  const returnSaveLock = useRef(false);
+  useEffect(() => { if (!returnDaysDirty) setReturnDays(String(settings.defaultReturnWindowDays)); }, [settings.defaultReturnWindowDays, returnDaysDirty]);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const summary = protectionSummary(items);
@@ -74,26 +84,34 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
   };
 
   const saveReturnDays = async () => {
+    if (returnSaveLock.current) return;
     const parsed = Number(returnDays);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 365) { onNotify('Return window must be between 1 and 365 days.'); return; }
-    setSaving(true);
-    try { await updateSettings({ defaultReturnWindowDays: parsed }); onNotify(`Suggested return window saved: ${parsed} days.`); }
+    const owner = returnRevision.current;
+    returnSaveLock.current = true; setSaving(true);
+    try { await updateSettings({ defaultReturnWindowDays: parsed }); if (owner === returnRevision.current) setReturnDaysDirty(false); onNotify(`Suggested return window saved: ${parsed} days.`); }
     catch { onNotify('Settings could not be saved. Try again.'); }
-    finally { setSaving(false); }
+    finally { returnSaveLock.current = false; setSaving(false); }
   };
 
   const selectBackup = async () => {
+    if (selectionLock.current || restoreLock.current) return;
+    selectionLock.current = true; setChoosingBackup(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: 'application/json', multiple: false, copyToCacheDirectory: true });
-      if (result.canceled) return;
+      if (!active.current || result.canceled) return;
+      setRestore(null);
       const asset = result.assets[0];
       if (!asset.size || asset.size > MAX_BACKUP_BYTES) throw new Error('Choose a JSON backup up to 5 MB with a readable file size.');
       const raw = Platform.OS === 'web' ? await (await fetch(asset.uri)).text() : await FileSystem.readAsStringAsync(asset.uri);
-      setRestore(parseBackup(raw));
-    } catch (e) { onNotify(e instanceof Error ? e.message : 'Could not read this backup. Nothing was restored.', 'danger'); }
+      const records = parseBackup(raw);
+      if (active.current) setRestore(records);
+    } catch (e) { if (active.current) onNotify(e instanceof Error ? e.message : 'Could not read this backup. Nothing was restored.', 'danger'); }
+    finally { selectionLock.current = false; if (active.current) setChoosingBackup(false); }
   };
   const confirmRestore = async () => {
-    if (!restore || !onRestoreBackup) return;
+    if (!restore || !onRestoreBackup || restoreLock.current || selectionLock.current) return;
+    restoreLock.current = true;
     setRestoring(true);
     try {
       const prefix = `restored-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -101,12 +119,15 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
       await onRestoreBackup(prepareRestoration(restore, () => `${prefix}-${index++}`));
       setRestore(null); onNotify('Backup records added. Original document files must be reattached.');
     } catch { onNotify('Restore did not finish. Previous saved records are unchanged.', 'danger'); }
-    finally { setRestoring(false); }
+    finally { restoreLock.current = false; setRestoring(false); }
   };
 
   const exportData = async () => {
-    const payload = JSON.stringify(createBackup(items), null, 2);
+    if (exportLock.current) return;
+    exportLock.current = true; setExporting(true);
+    let temporaryFile: string | null = null;
     try {
+      const payload = JSON.stringify(createBackup(items), null, 2);
       if (Platform.OS === 'web' && typeof document !== 'undefined') {
         const blob = new Blob([payload], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -117,12 +138,20 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
         onNotify('Download requested. Check your browser downloads for the JSON backup.');
       } else {
         if (!FileSystem.cacheDirectory || !await Sharing.isAvailableAsync()) throw new Error('File sharing unavailable');
-        const uri = `${FileSystem.cacheDirectory}proofpilot-export.json`;
+        const uri = `${FileSystem.cacheDirectory}proofpilot-export-${Date.now()}-${Math.random().toString(36).slice(2)}.json`;
+        temporaryFile = uri;
         await FileSystem.writeAsStringAsync(uri, payload);
         await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Save your ProofPilot backup', UTI: 'public.json' });
-        await FileSystem.deleteAsync(uri, { idempotent: true });
       }
-    } catch { onNotify('Export failed — your data has not changed.'); }
+    } catch { if (active.current) onNotify('Export failed — your data has not changed.'); }
+    finally {
+      if (temporaryFile) {
+        try { await FileSystem.deleteAsync(temporaryFile, { idempotent: true }); }
+        catch { if (active.current) onNotify('Temporary export cleanup failed. A backup copy may remain in this device’s app cache. Keep the device private.', 'danger'); }
+      }
+      exportLock.current = false;
+      if (active.current) setExporting(false);
+    }
   };
 
   return (
@@ -163,7 +192,7 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
             <Text style={type.bodySmall}>Offered as a quick-fill when protecting a purchase.</Text>
           </View>
           <View style={styles.returnRow}>
-            <Input accessibilityLabel="Suggested return window in days" value={returnDays} onChangeText={setReturnDays} keyboardType="number-pad" containerStyle={{ width: 78 }} />
+            <Input accessibilityLabel="Suggested return window in days" value={returnDays} onChangeText={value => { returnRevision.current++; setReturnDaysDirty(true); setReturnDays(value); }} keyboardType="number-pad" containerStyle={{ width: 78 }} />
             <Text style={type.bodySmall}>days</Text>
             <Button size="sm" variant="secondary" label="Save" loading={saving} onPress={saveReturnDays} />
           </View>
@@ -223,15 +252,15 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
               <Text style={type.label}>Export my data</Text>
               <Text style={type.bodySmall}>Versioned JSON with records and claim text. No document files or device paths.</Text>
             </View>
-            <Button size="sm" variant="secondary" icon="download" label="Export" onPress={exportData} disabled={items.length === 0} />
+            <Button size="sm" variant="secondary" icon="download" label="Export" loading={exporting} onPress={exportData} disabled={items.length === 0} />
           </View>
           {onRestoreBackup ? <View style={styles.dataRow}>
             <View style={{ flex: 1, minWidth: 170 }}><Text style={type.label}>Restore a JSON backup</Text><Text style={type.bodySmall}>Adds new copies to the current account; never replaces records. Files are not included. Repeated restores create copies.</Text></View>
-            <Button label="Choose backup" variant="secondary" onPress={selectBackup} disabled={restoring} />
+            <Button label="Choose backup" variant="secondary" onPress={selectBackup} disabled={restoring || choosingBackup} />
           </View> : null}
           {restore ? <Banner tone="warning" icon="alert-circle" title={`Add ${restore.length} purchases?`} message="These records will belong to the current account and sync if signed in. Document files must be reattached.">
             <Button label="Cancel restore" variant="ghost" onPress={() => setRestore(null)} disabled={restoring} />
-            <Button label="Confirm restore" onPress={confirmRestore} loading={restoring} />
+            <Button label="Confirm restore" onPress={confirmRestore} disabled={choosingBackup} loading={restoring} />
           </Banner> : null}
           {__DEV__ ? <View style={styles.dataRow}>
             <View style={{ flex: 1, minWidth: 170 }}>

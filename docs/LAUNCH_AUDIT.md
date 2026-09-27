@@ -2,6 +2,8 @@
 
 Date: 2026-09-26. Branch: `arena/01a0dd28-proofpilot`. PR #9 remains draft and unmerged. This report supersedes the earlier hardening-increment audit. **NOT SAFE TO SHIP as a public cloud-enabled product.** No production service, SMTP, AI provider, signed store build or physical device was verified. Work is not represented as complete production transformation.
 
+> **Current local evidence:** The [latest release-hardening review](FINAL_RELEASE_HARDENING_REPORT.md) records the subsequent local fixes and two full 56-test browser runs. Native prebuild evidence below is historical; this pass reran all-platform exports, not prebuild or device testing. Hosted release blockers remain unchanged.
+
 ## 1. Changes — FIXED
 
 Continued beyond the initial hardening increment: server AI/deletion handlers, service-control migration and quotas, native PKCE callback handling, durable managed-file cleanup and orphan inventory, real JSON sharing, tab-safe local transactions, native network/resume handling, public-only offline shell, keyboard/dialog accessibility, responsive layouts, original app assets, EAS profiles, compatibility patches and operator verification/release scripts. Version stays 1.0.0. No fabricated integrations or automatic sample records.
@@ -14,14 +16,16 @@ Clean `npm ci` applied all four patches. Real PostgreSQL-compatible PGlite migra
 
 | Check | Latest result |
 |---|---|
-| Full Jest | 260 tests, 21 suites passed |
+| Full Jest | 354 tests, 35 suites passed |
 | Embedded PostgreSQL/RLS | 26 assertions passed |
 | Deno handler/HTTP tests | 18 passed |
 | Deno production entrypoint checks | Both passed |
 | Tooling compatibility | 5 checks passed |
-| Playwright Chromium | 24 passed |
+| Playwright Chromium | 56 passed twice consecutively |
+| ESLint | Passed, zero errors/warnings |
+| Offline generator regression | 1 passed |
 | Release/staging configuration tests | 9 passed |
-| TypeScript incl. unused locals/parameters | Passed |
+| TypeScript | Passed; unused-symbol check was also run earlier in the pass |
 | Web production export + offline shell | Passed |
 | iOS/Android bundle export and project prebuild | Passed; not compiled/signed |
 | Clean install / npm audit | Passed / 0 reported vulnerabilities |

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Feather } from './Feather';
-import { colors, radius, spacing, type } from '../design/tokens';
+import { breakpoints, colors, radius, spacing, type } from '../design/tokens';
 import {
   filterPurchases,
   formatMoney,
@@ -30,13 +30,18 @@ export function PurchasesScreen({
   query,
   onAdd,
   onOpen,
+  onClearSearch,
 }: {
   items: Purchase[];
   total: number;
   query: string;
   onAdd: () => void;
   onOpen: (purchase: Purchase) => void;
+  onClearSearch?: () => void;
 }) {
+  const phone = useWindowDimensions().width <= breakpoints.phone;
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const showControls = !phone || filtersOpen;
   const [filters, setFilters] = useState<PurchaseFilters>(defaultFilters);
   const [sortKey, setSortKey] = useState<PurchaseSortKey>('date');
   const [direction, setDirection] = useState<SortDirection>('desc');
@@ -92,7 +97,8 @@ export function PurchasesScreen({
                 {filtersActive ? <View style={styles.dot} /> : null}
                 {filtersActive ? <Text style={[type.caption, { color: colors.brandDark, fontWeight: '700' }]}>Filters active</Text> : null}
               </View>
-              <View style={styles.sortRow}>
+              {phone ? <Button label="Filters & sort" variant="secondary" size="sm" icon={filtersOpen ? 'chevron-up' : 'sliders'} accessibilityExpanded={filtersOpen} onPress={() => setFiltersOpen(value => !value)} /> : null}
+              {showControls ? <View style={styles.sortRow}>
                 <Text style={type.caption}>Sort</Text>
                 {sortLabels.map(([value, label]) => (
                   <Chip
@@ -114,9 +120,10 @@ export function PurchasesScreen({
                   selected={false}
                   onPress={() => setDirection((c) => (c === 'asc' ? 'desc' : 'asc'))}
                 />
-              </View>
+              </View> : null}
             </View>
 
+            {showControls ? <>
             <View style={styles.filterRow}>
               {(
                 [
@@ -160,6 +167,7 @@ export function PurchasesScreen({
                 ))}
               </ScrollView>
             ) : null}
+            </> : null}
           </Card>
 
           {visible.length ? (
@@ -200,8 +208,8 @@ export function PurchasesScreen({
                 filters.protection !== 'all' ? ' · protection filter active' : '',
                 '.',
               ].join('')}
-              actionLabel={filtersActive || query ? 'Clear filters' : undefined}
-              onAction={filtersActive || query ? resetFilters : undefined}
+              actionLabel={query && onClearSearch ? 'Clear search and filters' : filtersActive ? 'Clear filters' : undefined}
+              onAction={filtersActive || (query && onClearSearch) ? () => { resetFilters(); if (query) onClearSearch?.(); } : undefined}
             />
           )}
         </>

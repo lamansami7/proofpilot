@@ -15,7 +15,9 @@ npm start
 Leave integration variables empty for local-only operation. A fresh installation starts empty. Previously saved records are retained; sample loading is restricted to development builds. Production builds do not offer sample loading. Do not use samples as customer data.
 
 ```bash
+npm run lint
 npm test -- --runInBand
+npm run test:offline
 npm run test:migrations
 ./node_modules/.bin/tsc --noEmit
 ./node_modules/.bin/tsc --noEmit --noUnusedLocals --noUnusedParameters
@@ -32,7 +34,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The tests cover initial empty state and navigation at 320, 375, 430, 768, 1024, 1280, and 1440 pixels. All 24 current browser tests passed in local Chromium, including populated workflows, axe scans, nested dialogs, file cleanup, two-tab saves and offline reload. This is not a screen-reader or real-device certification.
+The tests cover initial empty state and navigation at 320, 375, 430, 768, 1024, 1280, and 1440 pixels. All 56 current browser tests passed twice consecutively in local Chromium, including populated workflows, axe scans, nested dialogs, file cleanup, two-tab saves, stale-delete conflicts, settings propagation, cross-tab storage clearing, claim draft persistence and clipboard recovery, corrupt storage, offline reload, compact phone filters, and a real browser-process restart with byte-identical attachment download. See [the final release-hardening report](docs/FINAL_RELEASE_HARDENING_REPORT.md) for current evidence and limitations. This is not a screen-reader or real-device certification.
 
 ## Architecture and sources of truth
 

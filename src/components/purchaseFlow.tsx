@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from './Feather';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { validatePurchaseFields } from '../lib/purchaseValidation';
+import { PurchaseConflictError } from '../lib/localPurchaseStore';
 import { persistDocumentUri } from '../lib/documents';
 import { deriveProtection, formatDate, formatMoney, isValidIsoDate, isoDate, isoDaysFrom, protectionLabel } from '../lib/purchaseSelectors';
 import type { DeadlineType, DocumentKind, FeatherIconName, Purchase, PurchaseDeadline, PurchaseDocument } from '../types/purchase';
@@ -55,12 +56,16 @@ function purchaseFromForm(form: Form, documents: PurchaseDocument[], customDeadl
 
 export function PurchaseFlow({ visible, initialPurchase, merchants, defaultReturnDays, onClose, onSave, onDone }: { visible: boolean; initialPurchase: Purchase | null; merchants: string[]; defaultReturnDays: number; onClose: () => void; onSave: (purchase: Purchase) => Promise<void>; onDone: (purchase: Purchase) => void }) {
   const editing = Boolean(initialPurchase);
+  const generation = useRef(0);
+  const saving = useRef(false);
+  useEffect(() => { generation.current++; return () => { generation.current++; }; }, [visible, initialPurchase]);
   const [step, setStep] = useState<FlowStep>('start');
   const [form, setForm] = useState<Form>(blankForm);
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
   const [documents, setDocuments] = useState<PurchaseDocument[]>([]);
   const [customDeadlines, setCustomDeadlines] = useState<PurchaseDeadline[]>([]);
   const [upload, setUpload] = useState<UploadState>('idle');
+  const [saveError, setSaveError] = useState<string | undefined>();
   const [saved, setSaved] = useState<Purchase | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'error'>('idle');
 
@@ -69,29 +74,38 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
   const update = (field: Field, value: string) => { setForm((current) => ({ ...current, [field]: value })); setErrors((current) => ({ ...current, [field]: undefined })); };
 
   const pickDocument = async (kind: DocumentKind) => {
+    const owner = generation.current;
+    const isCurrent = () => generation.current === owner;
     setUpload('processing');
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true, multiple: false });
+      if (!isCurrent()) return;
       if (result.canceled) { setUpload('idle'); return; }
       const document = await documentFor(result.assets[0], kind);
+      if (!isCurrent()) return; // Managed orphan copies are handled by file maintenance.
       setDocuments((current) => (kind === 'receipt' ? [...current.filter((item) => item.kind !== 'receipt'), document] : [...current, document]));
       setUpload('success'); setStep('form');
-    } catch { setUpload('error'); }
+    } catch { if (isCurrent()) setUpload('error'); }
   };
 
   const scanReceipt = async () => {
+    const owner = generation.current;
+    const isCurrent = () => generation.current === owner;
     setUpload('processing');
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!isCurrent()) return;
       if (!permission.granted) { setUpload('error'); return; }
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+      if (!isCurrent()) return;
       if (result.canceled) { setUpload('idle'); return; }
       const asset = result.assets[0];
       const name = asset.fileName ?? 'Receipt photo.jpg';
       const uri = asset.uri ? await persistDocumentUri(asset.uri, name) : null;
+      if (!isCurrent()) return;
       setDocuments((current) => [...current.filter((document) => document.kind !== 'receipt'), { id: `receipt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, kind: 'receipt', mimeType: asset.mimeType ?? 'image/jpeg', sizeBytes: asset.fileSize ?? null, uri, addedAt: isoDate(new Date()) }]);
       setUpload('success'); setStep('form');
-    } catch { setUpload('error'); }
+    } catch { if (isCurrent()) setUpload('error'); }
   };
 
   const validate = (): boolean => {
@@ -101,7 +115,17 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
     return Object.keys(next).length === 0;
   };
 
-  const save = async () => { const purchase = purchaseFromForm(form, documents, customDeadlines, initialPurchase ?? undefined); setSaveState('saving'); try { await onSave(purchase); setSaved(purchase); setSaveState('idle'); setStep('success'); } catch { setSaveState('error'); } };
+  const save = async () => {
+    if (saving.current) return;
+    const owner = generation.current;
+    const purchase = purchaseFromForm(form, documents, customDeadlines, initialPurchase ?? undefined);
+    saving.current = true; setSaveError(undefined); setSaveState('saving');
+    try {
+      await onSave(purchase);
+      if (generation.current === owner) { setSaved(purchase); setSaveState('idle'); setStep('success'); }
+    } catch (error) { if (generation.current === owner) { setSaveError(error instanceof PurchaseConflictError ? error.message : undefined); setSaveState('error'); } }
+    finally { saving.current = false; }
+  };
   const merchantSuggestions = useMemo(() => { const typed = form.merchant.trim().toLowerCase(); return merchants.filter((merchant) => !typed || merchant.toLowerCase().includes(typed)).filter((merchant) => merchant.toLowerCase() !== typed).slice(0, 3); }, [merchants, form.merchant]);
 
   return (
@@ -110,7 +134,7 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
       {step === 'form' ? (
         <FormStep form={form} errors={errors} documents={documents} upload={upload} customDeadlines={customDeadlines} onCustomDeadlinesChange={setCustomDeadlines} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { const valid = validate(); if (valid) setStep('review'); return valid; }} />
       ) : null}
-      {step === 'review' ? <ReviewStep purchase={purchaseFromForm(form, documents, customDeadlines, initialPurchase ?? undefined)} onEdit={() => setStep('form')} onSave={save} saveState={saveState} /> : null}
+      {step === 'review' ? <ReviewStep purchase={purchaseFromForm(form, documents, customDeadlines, initialPurchase ?? undefined)} onEdit={() => setStep('form')} onSave={save} saveState={saveState} saveError={saveError} /> : null}
       {step === 'success' && saved ? <SuccessStep purchase={saved} editing={editing} onDone={() => onDone(saved)} /> : null}
     </Sheet>
   );
@@ -274,7 +298,7 @@ function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDe
   );
 }
 
-function ReviewStep({ purchase, onEdit, onSave, saveState }: { purchase: Purchase; onEdit: () => void; onSave: () => void; saveState: 'idle' | 'saving' | 'error' }) {
+function ReviewStep({ purchase, onEdit, onSave, saveState, saveError }: { saveError?: string; purchase: Purchase; onEdit: () => void; onSave: () => void; saveState: 'idle' | 'saving' | 'error' }) {
   const rows: Array<[string, string]> = [
     ['Product', purchase.name], ['Merchant', purchase.merchant], ['Price', formatMoney(purchase.price)], ['Purchase date', formatDate(purchase.purchaseDate)], ['Category', purchase.category],
     ['Return deadline', purchase.returnDeadline ? formatDate(purchase.returnDeadline) : 'Not added'], ['Warranty', purchase.warrantyEnd ? `${formatDate(purchase.warrantyEnd)}${purchase.warrantyProvider ? ` · ${purchase.warrantyProvider}` : ''}` : 'Not added'],
@@ -298,7 +322,7 @@ function ReviewStep({ purchase, onEdit, onSave, saveState }: { purchase: Purchas
           </View>
         ))}
       </View>
-      {saveState === 'error' ? <Banner tone="danger" icon="alert-circle" title="Purchase not saved" message="ProofPilot could not write this record to device storage. Your form is still here; free some storage and try again." /> : null}
+      {saveState === 'error' ? <Banner tone="danger" icon="alert-circle" title="Purchase not saved" message={saveError ?? "ProofPilot could not write this record to device storage. Your form is still here; check device storage and try again."} /> : null}
       <View style={[styles.row, { marginTop: saveState === 'error' ? spacing.md : 0 }]}>
         <Button label="Back to edit" icon="edit-2" variant="secondary" onPress={onEdit} style={{ flex: 1 }} />
         <Button label="Save purchase" icon="shield" onPress={onSave} loading={saveState === 'saving'} style={{ flex: 1 }} />

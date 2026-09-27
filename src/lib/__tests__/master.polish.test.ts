@@ -11,10 +11,10 @@ describe('Master polish — public version stays 1.0.0', () => {
     expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
   test('tokens include attention and hero semantics without exposing V3', () => {
-    expect((colors as any).attentionSegment).toBe('#E4B15E');
-    expect((colors as any).hero).toBe('#193831');
-    expect((colors as any).brandBorder).toBe('#DCE9CA');
-    expect((colors as any).brandTint).toBe('#DCEFC6');
+    expect((colors).attentionSegment).toBe('#E4B15E');
+    expect((colors).hero).toBe('#193831');
+    expect((colors).brandBorder).toBe('#DCE9CA');
+    expect((colors).brandTint).toBe('#DCEFC6');
   });
 });
 
@@ -51,17 +51,17 @@ describe('Reliability — id uniqueness and strict validation', () => {
   });
   test('price validation allows 0 and 0.00 but rejects blanks, 1.123, trailing', () => {
     const base = { name: 'A', merchant: 'B', purchaseDate: '2026-09-20', returnDeadline: '', warrantyEnd: '' };
-    expect(validatePurchaseFields({ ...base, price: '0' } as any).price).toBeUndefined();
-    expect(validatePurchaseFields({ ...base, price: '0.00' } as any).price).toBeUndefined();
-    expect(validatePurchaseFields({ ...base, price: '' } as any).price).toBeTruthy();
-    expect(validatePurchaseFields({ ...base, price: '1.123' } as any).price).toBeTruthy();
-    expect(validatePurchaseFields({ ...base, price: '12oops' } as any).price).toBeTruthy();
-    expect(validatePurchaseFields({ ...base, price: ' ' } as any).price).toBeTruthy();
+    expect(validatePurchaseFields({ ...base, price: '0' }).price).toBeUndefined();
+    expect(validatePurchaseFields({ ...base, price: '0.00' }).price).toBeUndefined();
+    expect(validatePurchaseFields({ ...base, price: '' }).price).toBeTruthy();
+    expect(validatePurchaseFields({ ...base, price: '1.123' }).price).toBeTruthy();
+    expect(validatePurchaseFields({ ...base, price: '12oops' }).price).toBeTruthy();
+    expect(validatePurchaseFields({ ...base, price: ' ' }).price).toBeTruthy();
   });
   test('impossible dates rejected, chronology enforced', () => {
-    expect(validatePurchaseFields({ name: 'A', merchant: 'B', price: '10', purchaseDate: '2026-02-30', returnDeadline: '', warrantyEnd: '' } as any).purchaseDate).toBeTruthy();
-    expect(validatePurchaseFields({ name: 'A', merchant: 'B', price: '10', purchaseDate: '2026-09-20', returnDeadline: '2026-09-19', warrantyEnd: '' } as any).returnDeadline).toBeTruthy();
-    expect(validatePurchaseFields({ name: 'A', merchant: 'B', price: '10', purchaseDate: '2026-09-20', returnDeadline: '', warrantyEnd: '2026-03-09' } as any).warrantyEnd).toBeTruthy();
+    expect(validatePurchaseFields({ name: 'A', merchant: 'B', price: '10', purchaseDate: '2026-02-30', returnDeadline: '', warrantyEnd: '' }).purchaseDate).toBeTruthy();
+    expect(validatePurchaseFields({ name: 'A', merchant: 'B', price: '10', purchaseDate: '2026-09-20', returnDeadline: '2026-09-19', warrantyEnd: '' }).returnDeadline).toBeTruthy();
+    expect(validatePurchaseFields({ name: 'A', merchant: 'B', price: '10', purchaseDate: '2026-09-20', returnDeadline: '', warrantyEnd: '2026-03-09' }).warrantyEnd).toBeTruthy();
   });
   test('protection is never presented as active when expired', () => {
     const now = new Date('2026-09-26T12:00:00');

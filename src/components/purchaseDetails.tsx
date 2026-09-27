@@ -46,7 +46,7 @@ export function PurchaseDetails({
   onClose: () => void;
   onEdit: (purchase: Purchase) => void;
   onDelete: (purchase: Purchase) => void;
-  onUpdate: (purchase: Purchase) => Promise<void>;
+  onUpdate: (purchase: Purchase, expected?: Purchase) => Promise<void>;
   onNotify: (message: string, tone?: 'success' | 'danger' | 'info') => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -68,7 +68,7 @@ export function PurchaseDetails({
   const togglePin = async () => {
     setBusy(true);
     try {
-      await onUpdate({ ...purchase, pinned: !purchase.pinned });
+      await onUpdate({ ...purchase, pinned: !purchase.pinned }, purchase);
       onNotify(purchase.pinned ? `${purchase.name} unpinned.` : `${purchase.name} pinned to the top of your lists.`, 'success');
     } catch {
       onNotify('The pin could not be saved. Your record is unchanged.', 'danger');
@@ -137,7 +137,7 @@ export function PurchaseDetails({
             warrantyEnd: purchase.warrantyEnd,
             hasReceipt: purchase.hasReceipt || kind === 'receipt',
           }),
-        });
+        }, purchase);
         onNotify(`${documentKindLabel(kind)} attached to ${purchase.name}.`);
       }
     } catch {
@@ -179,7 +179,7 @@ export function PurchaseDetails({
         <Feather name="chevron-left" size={14} color={colors.muted} />
         <Text style={type.caption}>Purchases</Text>
         <Text style={type.caption}>·</Text>
-        <Text style={[type.caption, { color: colors.ink, fontWeight: '700' }]} numberOfLines={1}>{purchase.name}</Text>
+        <Text style={[type.caption, { color: colors.ink, fontWeight: '700', flex: 1, minWidth: 0 }]} numberOfLines={1}>{purchase.name}</Text>
       </View>
 
       <View style={styles.headerRow}>
@@ -247,7 +247,7 @@ export function PurchaseDetails({
         </View>
         <Text style={[type.body, { marginTop: spacing.sm }]}>
           {purchase.hasReceipt
-            ? `${purchase.documents.filter((d) => d.kind === 'receipt').length} receipt record(s) attached. Verified information is saved with this purchase and powers your protection status.`
+            ? `${purchase.documents.filter((d) => d.kind === 'receipt').length} receipt record(s) attached. These saved records inform your protection status; their contents have not been verified.`
             : 'No receipt on record. Add your proof of purchase so it’s easy to find when you need it — it also upgrades this purchase to “Protected” when an active window exists.'}
         </Text>
         <Text style={[type.caption, { marginTop: spacing.sm, color: colors.muted }]}>
@@ -312,7 +312,7 @@ export function PurchaseDetails({
 
       <Card style={styles.section}>
         <Text style={type.label}>Purchase facts</Text>
-        <Text style={type.caption}>Verified information you saved — not inferred.</Text>
+        <Text style={type.caption}>Information you saved — not independently verified.</Text>
         <View style={styles.factGrid}>
           <Fact label="Merchant" value={purchase.merchant} />
           <Fact label="Price" value={formatMoney(purchase.price)} />
@@ -360,7 +360,7 @@ export function PurchaseDetails({
         <ClaimGenerator
           purchase={purchase}
           onSaveDraft={async (document) => {
-            await onUpdate({ ...purchase, documents: [...purchase.documents, document] });
+            await onUpdate({ ...purchase, documents: [...purchase.documents, document] }, purchase);
             onNotify('Claim draft saved to your Vault.', 'success');
           }}
         />
@@ -448,7 +448,7 @@ function DocumentRow({ document, onOpen }: { document: PurchaseDocument; onOpen:
 const styles = StyleSheet.create({
   breadcrumb: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: spacing.md },
   headerRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: spacing.md, marginBottom: spacing.lg },
-  headerActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginLeft: 'auto' },
+  headerActions: { maxWidth: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginLeft: 'auto' },
   kindPicker: {
     gap: spacing.sm,
     padding: spacing.lg,
@@ -459,14 +459,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   proofCard: { padding: spacing.xl, backgroundColor: colors.surface, borderColor: colors.borderSubtle, marginBottom: spacing.md, ...shadows.soft, borderLeftWidth: 3, borderLeftColor: colors.brand },
-  proofHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  proofHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
   proofIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.brandBorder },
   protectionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   protectionCard: { flex: 1, flexBasis: 260, padding: spacing.lg, minWidth: 0, ...shadows.card },
-  protectionHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  protectionHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
   protectionIcon: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.brandMuted, alignItems: 'center', justifyContent: 'center' },
   section: { padding: spacing.lg, marginTop: spacing.md, gap: spacing.sm },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.md },
+  sectionHead: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.md },
   factGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: spacing.sm, gap: 0 },
   factCell: { flexGrow: 1, flexBasis: '46%', paddingVertical: spacing.sm, paddingRight: spacing.md, borderBottomWidth: 1, borderColor: colors.borderSubtle, minWidth: 140 },
   documentRow: {

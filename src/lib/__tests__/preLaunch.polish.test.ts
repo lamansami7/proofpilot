@@ -71,15 +71,15 @@ describe('Reliability · id uniqueness prevents duplicates', () => {
 describe('Reliability · strict validation prevents data loss', () => {
   test('zero-price is allowed but blanks and malformed are rejected', () => {
     const base = { name: 'Gift', merchant: 'Store', purchaseDate: '2026-09-25', returnDeadline: '', warrantyEnd: '' };
-    expect(validatePurchaseFields({ ...base, price: '0' } as any).price).toBeUndefined();
-    expect(validatePurchaseFields({ ...base, price: '0.00' } as any).price).toBeUndefined();
-    expect(validatePurchaseFields({ ...base, price: '' } as any).price).toBeTruthy();
-    expect(validatePurchaseFields({ ...base, price: '1.123' } as any).price).toBeTruthy();
+    expect(validatePurchaseFields({ ...base, price: '0' }).price).toBeUndefined();
+    expect(validatePurchaseFields({ ...base, price: '0.00' }).price).toBeUndefined();
+    expect(validatePurchaseFields({ ...base, price: '' }).price).toBeTruthy();
+    expect(validatePurchaseFields({ ...base, price: '1.123' }).price).toBeTruthy();
   });
 
   test('impossible dates are rejected before save', () => {
     const base = { name: 'X', merchant: 'Y', price: '10', purchaseDate: '2026-02-30', returnDeadline: '', warrantyEnd: '' };
-    expect(validatePurchaseFields(base as any).purchaseDate).toBeTruthy();
+    expect(validatePurchaseFields(base).purchaseDate).toBeTruthy();
     expect(isValidIsoDate('2026-13-01')).toBe(false);
   });
 

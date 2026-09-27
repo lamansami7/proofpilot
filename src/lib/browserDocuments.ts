@@ -3,21 +3,32 @@ import { DOCUMENT_MIME_TYPES, validateDocumentSize } from './documentValidation'
 const PREFIX = 'proofpilot-file:';
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    let abandoned = false;
     const request = indexedDB.open('proofpilot-documents', 1);
     request.onupgradeneeded = () => request.result.createObjectStore('files');
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      if (abandoned) { db.close(); return; }
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('Document storage is blocked. Close other ProofPilot tabs.'));
+    request.onblocked = () => { abandoned = true; reject(new Error('Document storage is blocked. Close other ProofPilot tabs.')); };
   });
 }
 async function transaction<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const db = await openDatabase();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('files', mode);
-    const request = action(tx.objectStore('files'));
-    tx.oncomplete = () => { db.close(); resolve(request.result); };
-    tx.onerror = tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Document storage failed.')); };
-  });
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const tx = db.transaction('files', mode);
+      const request = action(tx.objectStore('files'));
+      tx.oncomplete = () => resolve(request.result);
+      tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('Document storage failed.'));
+    });
+  } finally {
+    // Also close after synchronous transaction/action failures, not just events.
+    db.close();
+  }
 }
 export const isBrowserDocument = (uri: string) => uri.startsWith(PREFIX);
 export async function saveBrowserDocument(uri: string): Promise<string> {
@@ -32,7 +43,9 @@ export async function saveBrowserDocument(uri: string): Promise<string> {
 }
 export async function readBrowserDocument(uri: string): Promise<Blob> {
   const blob = await transaction<Blob | undefined>('readonly', store => store.get(uri.slice(PREFIX.length)));
-  if (!blob) throw new Error('File is no longer on this device. Reattach it from the purchase.');
+  if (!(blob instanceof Blob)) throw new Error('File is missing or unreadable on this device. Reattach it from the purchase.');
+  validateDocumentSize(blob.size);
+  if (!DOCUMENT_MIME_TYPES.includes(blob.type)) throw new Error('Unsupported stored file type. Reattach the original PDF or image.');
   return blob;
 }
 export async function deleteBrowserDocument(uri: string) { await transaction('readwrite', store => store.delete(uri.slice(PREFIX.length))); }

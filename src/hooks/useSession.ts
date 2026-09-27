@@ -33,7 +33,7 @@ export function useSession() {
     client.auth.getSession().then(({ data: restored, error: failure }) => {
       if (!active || eventSeen) return;
       if (failure) throw failure;
-      setUser(restored.session?.user ?? null); setLoading(false); clearTimeout(timer);
+      setUser(restored.session?.user ?? null); setError(null); setLoading(false); clearTimeout(timer);
     }).catch(() => {
       if (!active || eventSeen) return;
       clearTimeout(timer); setError('Could not restore your session. Retry without clearing device data.'); setLoading(false);
