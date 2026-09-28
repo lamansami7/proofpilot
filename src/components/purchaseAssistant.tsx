@@ -11,6 +11,8 @@ import { Banner, Button, Card, Input, interactive } from './ui';
 type Message = { id: string; role: 'user' | 'assistant'; text: string; answer?: PurchaseAnswer };
 const questions = ['Can I still return this?', 'Is this still under warranty?', 'What should I do if it breaks?', 'What documents do I need?', 'What information is missing from this purchase?'];
 
+const MAX_AI_QUESTION_LENGTH = 1000;
+
 
 
 function knownFacts(p: Purchase): Array<[string, string]> {
@@ -53,7 +55,14 @@ export function PurchaseAssistant({ purchase, onEditPurchase, assistant = create
   const missing = useMemo(() => missingFacts(purchase), [purchase]);
 
   const ask = async (value: string) => {
-    const text = value.trim();
+  const text = value.trim();
+
+  if (text.length > MAX_AI_QUESTION_LENGTH) {
+    setQuestion(text.slice(0, MAX_AI_QUESTION_LENGTH));
+    setState('error');
+    setLastQuestion('');
+    return;
+  }
     if (!text || inFlight.current) return;
     inFlight.current = true;
     const owner = ++request.current;

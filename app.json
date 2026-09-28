@@ -23,7 +23,7 @@
         "backgroundColor": "#193831"
       },
       "permissions": [
-        "CAMERA"
+        "android.permission.CAMERA"
       ],
       "versionCode": 1,
       "blockedPermissions": [
@@ -47,6 +47,12 @@
     "web": {
       "name": "ProofPilot",
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "35a5ac4e-462a-46f9-85a7-087ffffdb41f"
+      }
+    },
+    "owner": "lamansami7"
   }
 }
