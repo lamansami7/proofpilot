@@ -180,3 +180,32 @@ marking live/device/legal reviews complete.
 6. Correct the external site's copy/behavior above and obtain real human legal/privacy review of
    the updated public privacy and terms documents. Set approval flags **only after** the relevant
    live, device and legal reviews, then rerun `npm run check:release`.
+
+## Follow-up verification — generated web export isolation
+
+The full requested suite was rerun from commit `3c62684`. Running `npm run typecheck` concurrently
+with `npm run build:web` exposed a real tooling race: TypeScript's default `**/*` input included
+ignored JavaScript from `dist/`, and Expo removed those files while rewriting the export; TypeScript
+failed with TS6053 for a bundle and the service worker. `tsconfig.json` now excludes **only** the
+generated `dist/` tree (not application source). `npm run typecheck` and `npm run lint` pass after
+the change; a concurrent web rebuild and typecheck also pass. `tsc --listFilesOnly` reported **zero**
+generated `dist/` files and **92** application files. The independent `npm run build:web` and
+`npm run check:secrets` still pass (7 artifact scan rules); the client-artifact security check was
+not removed or relaxed. After rebuilding, the complete browser suite passed **56/56**.
+
+Also rerun in this follow-up: 41 Jest suites / 430 tests; 28 release-config tests; 26 embedded
+migration checks; 1 offline-shell test; 5 tooling checks; 23 Edge tests; both Edge entrypoints
+checked; 4 client-secret-scanner tests; 8 staging-config tests; `npm audit --audit-level=low` and
+`npm audit --omit=dev --audit-level=low` each reported **zero vulnerabilities**; `git diff --check`
+passed. The public site's reminders/household/cloud-attachment/deletion/web-signin claims and
+pending legal language were rechecked and remain as documented above; **no external site change
+was made**.
+
+`.env.local` remains absent and ignored. `npm run check:staging` failed on absent staging ref,
+URL/public key, explicit opt-in and both QA account pairs; `npm run test:live` was **not run** because
+that preflight failed. `supabase projects list`, `supabase migration list`, and both forms of
+`supabase functions list` exited 1 due to absent authentication and/or missing local project link.
+A secrets-list attempt also exited 1; its output was withheld, and **no server secret names or
+values were verified**. The deletion route again answered an unauthenticated GET with the expected
+method error, not an authenticated deletion result. The release gate still reports its nine
+configuration/review blockers; no flag was enabled and no approval was inferred.
