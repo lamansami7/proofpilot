@@ -7,6 +7,7 @@ import { colors, radius, spacing, type } from '../design/tokens';
 import { validatePurchaseFields } from '../lib/purchaseValidation';
 import { PurchaseConflictError } from '../lib/localPurchaseStore';
 import { persistDocumentUri } from '../lib/documents';
+import { documentFailureMessage } from '../lib/documentErrors';
 import { deriveProtection, formatDate, formatMoney, isValidIsoDate, isoDate, isoDaysFrom, protectionLabel } from '../lib/purchaseSelectors';
 import type { DeadlineType, DocumentKind, FeatherIconName, Purchase, PurchaseDeadline, PurchaseDocument } from '../types/purchase';
 import { Badge, Banner, Button, Chip, IconButton, Input, interactive, Sheet } from './ui';
@@ -65,18 +66,19 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
   const [documents, setDocuments] = useState<PurchaseDocument[]>([]);
   const [customDeadlines, setCustomDeadlines] = useState<PurchaseDeadline[]>([]);
   const [upload, setUpload] = useState<UploadState>('idle');
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | undefined>();
   const [saved, setSaved] = useState<Purchase | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'error'>('idle');
 
-  useEffect(() => { if (visible) { setForm(initialPurchase ? formFor(initialPurchase) : blankForm); setDocuments(initialPurchase?.documents ?? []); setCustomDeadlines((initialPurchase?.deadlines ?? []).filter((deadline) => deadline.type === 'custom' || deadline.type === 'rebate')); setErrors({}); setUpload('idle'); setSaved(null); setSaveState('idle'); setStep(initialPurchase ? 'form' : 'start'); } }, [visible, initialPurchase]);
+  useEffect(() => { if (visible) { setForm(initialPurchase ? formFor(initialPurchase) : blankForm); setDocuments(initialPurchase?.documents ?? []); setCustomDeadlines((initialPurchase?.deadlines ?? []).filter((deadline) => deadline.type === 'custom' || deadline.type === 'rebate')); setErrors({}); setUpload('idle'); setUploadError(null); setSaved(null); setSaveState('idle'); setStep(initialPurchase ? 'form' : 'start'); } }, [visible, initialPurchase]);
 
   const update = (field: Field, value: string) => { setForm((current) => ({ ...current, [field]: value })); setErrors((current) => ({ ...current, [field]: undefined })); };
 
   const pickDocument = async (kind: DocumentKind) => {
     const owner = generation.current;
     const isCurrent = () => generation.current === owner;
-    setUpload('processing');
+    setUpload('processing'); setUploadError(null);
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true, multiple: false });
       if (!isCurrent()) return;
@@ -85,17 +87,17 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
       if (!isCurrent()) return; // Managed orphan copies are handled by file maintenance.
       setDocuments((current) => (kind === 'receipt' ? [...current.filter((item) => item.kind !== 'receipt'), document] : [...current, document]));
       setUpload('success'); setStep('form');
-    } catch { if (isCurrent()) setUpload('error'); }
+    } catch (error) { if (isCurrent()) { setUploadError(documentFailureMessage(error, 'pick')); setUpload('error'); } }
   };
 
   const scanReceipt = async () => {
     const owner = generation.current;
     const isCurrent = () => generation.current === owner;
-    setUpload('processing');
+    setUpload('processing'); setUploadError(null);
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!isCurrent()) return;
-      if (!permission.granted) { setUpload('error'); return; }
+      if (!permission.granted) { setUploadError(documentFailureMessage(null, 'permission')); setUpload('error'); return; }
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
       if (!isCurrent()) return;
       if (result.canceled) { setUpload('idle'); return; }
@@ -105,7 +107,7 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
       if (!isCurrent()) return;
       setDocuments((current) => [...current.filter((document) => document.kind !== 'receipt'), { id: `receipt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, name, kind: 'receipt', mimeType: asset.mimeType ?? 'image/jpeg', sizeBytes: asset.fileSize ?? null, uri, addedAt: isoDate(new Date()) }]);
       setUpload('success'); setStep('form');
-    } catch { if (isCurrent()) setUpload('error'); }
+    } catch (error) { if (isCurrent()) { setUploadError(documentFailureMessage(error, 'camera')); setUpload('error'); } }
   };
 
   const validate = (): boolean => {
@@ -130,9 +132,9 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
 
   return (
     <Sheet visible={visible} onClose={() => { if (saveState !== 'saving') onClose(); }} wide eyebrow={editing ? 'EDIT RECORD' : 'NEW RECORD'} title={editing ? 'Edit purchase' : 'Protect a purchase'} subtitle={editing ? 'Keep this purchase record accurate and complete.' : 'Receipts, return windows, and warranties — one safe place.'}>
-      {step === 'start' ? <StartStep onManual={() => setStep('form')} onScan={scanReceipt} onUpload={() => pickDocument('receipt')} upload={upload} /> : null}
+      {step === 'start' ? <StartStep onManual={() => setStep('form')} onScan={scanReceipt} onUpload={() => pickDocument('receipt')} upload={upload} uploadError={uploadError} /> : null}
       {step === 'form' ? (
-        <FormStep form={form} errors={errors} documents={documents} upload={upload} customDeadlines={customDeadlines} onCustomDeadlinesChange={setCustomDeadlines} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { const valid = validate(); if (valid) setStep('review'); return valid; }} />
+        <FormStep form={form} errors={errors} documents={documents} upload={upload} uploadError={uploadError} customDeadlines={customDeadlines} onCustomDeadlinesChange={setCustomDeadlines} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); setUploadError(null); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { const valid = validate(); if (valid) setStep('review'); return valid; }} />
       ) : null}
       {step === 'review' ? <ReviewStep purchase={purchaseFromForm(form, documents, customDeadlines, initialPurchase ?? undefined)} onEdit={() => setStep('form')} onSave={save} saveState={saveState} saveError={saveError} /> : null}
       {step === 'success' && saved ? <SuccessStep purchase={saved} editing={editing} onDone={() => onDone(saved)} /> : null}
@@ -140,20 +142,21 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
   );
 }
 
-function StartStep({ onManual, onScan, onUpload, upload }: { onManual: () => void; onScan: () => void; onUpload: () => void; upload: UploadState }) {
+function StartStep({ onManual, onScan, onUpload, upload, uploadError }: { onManual: () => void; onScan: () => void; onUpload: () => void; upload: UploadState; uploadError: string | null }) {
   const cameraUnavailable = Platform.OS === 'web';
   return (
     <>
-      <Method icon="camera" title="Photograph a receipt" detail={cameraUnavailable ? 'Camera capture is available in the mobile app — upload or enter details here.' : 'Photograph the receipt with your camera.'} onPress={cameraUnavailable ? onUpload : onScan} disabled={cameraUnavailable} state={upload} />
-      <Method icon="upload" title="Upload a receipt or document" detail="PDF or image. Stored on this device." onPress={onUpload} state={upload} />
+      <Method icon="camera" title="Photograph a receipt" detail={cameraUnavailable ? 'Camera capture is available in the mobile app — upload or enter details here.' : 'Photograph the receipt with your camera.'} onPress={cameraUnavailable ? onUpload : onScan} disabled={cameraUnavailable} state={upload} error={uploadError} />
+      <Method icon="upload" title="Upload a receipt or document" detail="PDF or image. Stored on this device." onPress={onUpload} state={upload} error={uploadError} />
       <Method icon="edit-3" title="Enter details manually" detail="The fastest way if the receipt isn’t handy." onPress={onManual} />
+      {uploadError ? <Banner tone="danger" icon="alert-circle" title="That file was not attached" message={uploadError} /> : null}
       <Banner tone="brand" icon="info" title="Automatic receipt reading is not connected in this build" message="Your file is attached as-is. Enter or confirm the purchase details yourself — nothing is guessed." />
     </>
   );
 }
 
-function Method({ icon, title, detail, onPress, state, disabled }: { icon: FeatherIconName; title: string; detail: string; onPress: () => void; state?: UploadState; disabled?: boolean }) {
-  const status = state === 'processing' ? 'Attaching file…' : state === 'success' ? 'Document attached — confirm the details below.' : state === 'error' ? 'Could not read that file. Try again or continue without it.' : detail;
+function Method({ icon, title, detail, onPress, state, disabled, error }: { icon: FeatherIconName; title: string; detail: string; onPress: () => void; state?: UploadState; disabled?: boolean; error?: string | null }) {
+  const status = state === 'processing' ? 'Attaching file…' : state === 'success' ? 'Document attached — confirm the details below.' : state === 'error' ? (error ?? 'Could not read that file. Try again or continue without it.') : detail;
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{ disabled: Boolean(disabled) }} disabled={disabled || state === 'processing'} onPress={onPress} style={interactive([styles.method, disabled ? { opacity: 0.72 } : null], { hover: { ...styles.method, borderColor: colors.borderStrong, backgroundColor: colors.surface } })}>
       <View style={styles.methodIcon}><Feather name={icon} size={20} color={colors.brandDark} /></View>
@@ -176,7 +179,7 @@ function DateField({ label, value, error, onChange, hint, children, inputRef }: 
   );
 }
 
-function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDeadlinesChange, update, onPickDocument, onRemoveDocument, merchantSuggestions, defaultReturnDays, onNext }: { form: Form; errors: Partial<Record<Field, string>>; documents: PurchaseDocument[]; upload: UploadState; customDeadlines: PurchaseDeadline[]; onCustomDeadlinesChange: (deadlines: PurchaseDeadline[]) => void; update: (field: Field, value: string) => void; onPickDocument: (kind: DocumentKind) => void; onRemoveDocument: (id: string) => void; merchantSuggestions: string[]; defaultReturnDays: number; onNext: () => boolean }) {
+function FormStep({ form, errors, documents, upload, uploadError, customDeadlines, onCustomDeadlinesChange, update, onPickDocument, onRemoveDocument, merchantSuggestions, defaultReturnDays, onNext }: { form: Form; errors: Partial<Record<Field, string>>; documents: PurchaseDocument[]; upload: UploadState; uploadError: string | null; customDeadlines: PurchaseDeadline[]; onCustomDeadlinesChange: (deadlines: PurchaseDeadline[]) => void; update: (field: Field, value: string) => void; onPickDocument: (kind: DocumentKind) => void; onRemoveDocument: (id: string) => void; merchantSuggestions: string[]; defaultReturnDays: number; onNext: () => boolean }) {
   const [kindPickerOpen, setKindPickerOpen] = useState(false);
   const [deadlineTitle, setDeadlineTitle] = useState('');
   const [deadlineDate, setDeadlineDate] = useState('');
@@ -281,7 +284,7 @@ function FormStep({ form, errors, documents, upload, customDeadlines, onCustomDe
             <IconButton icon="x" label={`Remove ${document.name}`} size={30} tone="ghost" onPress={() => onRemoveDocument(document.id)} />
           </View>
         )) : <Text style={[type.caption, { marginTop: spacing.sm }]}>Nothing attached yet. A receipt makes this purchase “Protected”.</Text>}
-        {upload === 'error' ? <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm }]}><Feather name="alert-circle" size={12} color={colors.danger} /> That file couldn’t be read. Try another file, or continue without it.</Text> : null}
+        {upload === 'error' && uploadError ? <Text style={[type.caption, { color: colors.danger, marginTop: spacing.sm }]}><Feather name="alert-circle" size={12} color={colors.danger} /> {uploadError}</Text> : null}
       </View>
 
       <View style={styles.footerActions}>

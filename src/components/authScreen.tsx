@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { authThrottleMessage, createAuthThrottle, isRateLimitedError } from '../lib/authThrottle';
 import { Feather } from './Feather';
 import { colors, shadows, spacing, type } from '../design/tokens';
 import { Banner, Button, Card, Input } from './ui';
@@ -20,7 +21,7 @@ export function friendlyAuthError(message: string): string {
   return text.length <= 160 ? text : 'We could not continue. Check your connection and try again.';
 }
 
-export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (email: string) => Promise<void>; onSubmit: (email: string, password: string, signUp: boolean) => Promise<AuthResult> }) {
+export function AuthScreen({ onSubmit, onResetPassword, onResendConfirmation }: { onResetPassword?: (email: string) => Promise<void>; onResendConfirmation?: (email: string) => Promise<void>; onSubmit: (email: string, password: string, signUp: boolean) => Promise<AuthResult> }) {
   const compact = useWindowDimensions().width < 380;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,9 +31,16 @@ export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (e
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
 
+  // Client-side pacing only; Supabase's server-side limits remain the real control.
+  const throttle = useMemo(() => createAuthThrottle(), []);
   const request = useRef(false);
   const active = useRef(true);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  const blocked = () => {
+    const wait = throttle.remaining();
+    if (wait > 0) { setError(authThrottleMessage(wait)); return true; }
+    return false;
+  };
   const submit = async () => {
     if (request.current) return;
     const nextErrors: { email?: string; password?: string } = {};
@@ -40,23 +48,44 @@ export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (e
     if (signUp ? password.length < 8 : !password.length) nextErrors.password = signUp ? 'Use at least 8 characters.' : 'Enter your password.';
     setFieldErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
+    if (blocked()) return;
     request.current = true; setLoading(true); setError(''); setInfo('');
     try {
       const result = await onSubmit(email.trim(), password, signUp);
       if (active.current && result && result.info) setInfo(result.info);
+      if (!result) throttle.reset();
     } catch (e) {
-      if (active.current) setError(friendlyAuthError(e instanceof Error ? e.message : ''));
+      const message = e instanceof Error ? e.message : '';
+      if (isRateLimitedError(message)) throttle.penalize();
+      if (active.current) setError(friendlyAuthError(message));
     } finally {
-      request.current = false; if (active.current) setLoading(false);
+      const wait = throttle.record();
+      request.current = false;
+      if (active.current) { setLoading(false); if (wait > 0) setError(authThrottleMessage(wait)); }
     }
   };
 
   const resetPassword = async () => {
     if (request.current || !onResetPassword) return;
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setFieldErrors({ email: 'Enter your email first.' }); return; }
+    if (blocked()) return;
     request.current = true; setLoading(true); setError(''); setInfo('');
     try { await onResetPassword(email.trim()); if (active.current) setInfo('If an account exists for this email, a password reset link will be sent.'); }
-    catch (e) { if (active.current) setError(friendlyAuthError(e instanceof Error ? e.message : '')); }
+    catch (e) { const message = e instanceof Error ? e.message : ''; if (isRateLimitedError(message)) throttle.penalize(); if (active.current) setError(friendlyAuthError(message)); }
+    finally { request.current = false; if (active.current) setLoading(false); }
+  };
+
+  const resendConfirmation = async () => {
+    if (request.current || !onResendConfirmation) return;
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) { setFieldErrors({ email: 'Enter your email first.' }); return; }
+    if (blocked()) return;
+    request.current = true; setLoading(true); setError(''); setInfo('');
+    try {
+      await onResendConfirmation(email.trim());
+      // Deliberately identical whether or not the address has an account: a
+      // differing reply here would turn this screen into an account oracle.
+      if (active.current) setInfo('If an account is waiting for confirmation, a new link is on its way. Check your inbox and spam folder.');
+    } catch (e) { const message = e instanceof Error ? e.message : ''; if (isRateLimitedError(message)) throttle.penalize(); if (active.current) setError(friendlyAuthError(message)); }
     finally { request.current = false; if (active.current) setLoading(false); }
   };
 
@@ -80,6 +109,7 @@ export function AuthScreen({ onSubmit, onResetPassword }: { onResetPassword?: (e
           <Button label={loading ? 'Please wait…' : signUp ? 'Create account' : 'Sign in'} onPress={submit} icon="arrow-right" loading={loading} fullWidth />
         </View>
         {onResetPassword && !signUp ? <Button label="Forgot password?" variant="ghost" onPress={resetPassword} disabled={loading} fullWidth /> : null}
+        {onResendConfirmation && signUp ? <Button label="Resend confirmation email" variant="ghost" onPress={resendConfirmation} disabled={loading} fullWidth /> : null}
         <Button disabled={loading} label={signUp ? 'I already have an account' : 'Create an account instead'} onPress={() => { setSignUp(!signUp); setError(''); setInfo(''); }} variant="ghost" fullWidth />
         <Text style={[type.caption, { textAlign: 'center', marginTop: spacing.md }]}>Account and synchronized purchase data are processed by Supabase. Document files remain on this device; keep your originals.</Text>
       </Card>
