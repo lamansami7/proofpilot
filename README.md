@@ -61,7 +61,7 @@ Only public, client-safe values belong in Expo variables:
 | `EXPO_PUBLIC_PRIVACY_POLICY_URL` | Public HTTPS privacy policy, e.g. `https://get-proofpilot.lovable.app/privacy` |
 | `EXPO_PUBLIC_SUPPORT_EMAIL` | Private support address shown to users |
 | `EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED` | `true` only after the delete-account function is deployed and verified |
-| `EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT` | Optional trusted HTTPS backend base URL; requires Supabase sign-in. Blank means AI is intentionally disabled |
+| `EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT` | Optional `/functions/v1/proofpilot-ai` endpoint on the same Supabase project; requires sign-in. Blank means AI is intentionally disabled |
 | `EXPO_PUBLIC_SESSION_RESTORE_TIMEOUT_MS` | Optional 5000–60000 ms; defaults to 30000 |
 
 Expo embeds these at build time. Never set provider secrets, service-role keys or private signing credentials in client variables. `npm run check:release` validates the public URLs, client key, native build identifiers and EAS project id before a release.

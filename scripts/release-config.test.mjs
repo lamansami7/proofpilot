@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { publicHttps, publicClientKey, releaseFailures, stagingConfigured } from './release-config.mjs';
+import { publicHttps, publicSupportEmail, publicClientKey, validAiEndpoint, validSupabaseUrl, releaseFailures, stagingConfigured } from './release-config.mjs';
 test('empty release config fails closed without printing values',()=>{
  const failures=releaseFailures({},{});assert.ok(failures.length>=9);
  assert.ok(!releaseFailures({}, {EXPO_PUBLIC_SUPABASE_ANON_KEY:'private-value'}).join().includes('private-value'));
@@ -46,8 +46,8 @@ for (const value of REDIRECT_UNSAFE) {
   });
 }
 test('accepts the production auth redirect and never echoes its value in failures', () => {
-  const base = { EXPO_PUBLIC_SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co', EXPO_PUBLIC_SUPABASE_ANON_KEY: 'sb_publishable_fixture', EXPO_PUBLIC_PRIVACY_POLICY_URL: 'https://get-proofpilot.lovable.app/privacy', EXPO_PUBLIC_SUPPORT_EMAIL: 'support@example.com', EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED: 'true', EXPO_PUBLIC_AUTH_REDIRECT_URL: 'https://get-proofpilot.lovable.app' };
-  const app = { version: '1.0.0', extra: { eas: { projectId: '35a5ac4e-462a-46f9-85a7-087ffffdb41f' } }, android: { versionCode: 1 }, ios: { buildNumber: '1' } };
+  const base = { EXPO_PUBLIC_SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co', EXPO_PUBLIC_SUPABASE_ANON_KEY: 'sb_publishable_fixture', EXPO_PUBLIC_PRIVACY_POLICY_URL: 'https://get-proofpilot.lovable.app/privacy', EXPO_PUBLIC_SUPPORT_EMAIL: 'support@proofpilot.app', EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED: 'true', EXPO_PUBLIC_AUTH_REDIRECT_URL: 'https://get-proofpilot.lovable.app' };
+  const app = { name: 'ProofPilot', slug: 'proofpilot', owner: 'lamansami7', scheme: 'proofpilot', version: '1.0.0', extra: { eas: { projectId: '35a5ac4e-462a-46f9-85a7-087ffffdb41f' } }, android: { package: 'com.proofpilot.app', versionCode: 1 }, ios: { bundleIdentifier: 'com.proofpilot.app', buildNumber: '1' } };
   // Only the three human review approvals remain outstanding.
   const failures = releaseFailures(app, base);
   assert.equal(failures.length, 3, failures.join(' | '));
@@ -60,11 +60,52 @@ test('accepts the production auth redirect and never echoes its value in failure
 });
 
 // AI is optional by design: disabled must stay valid, enabled must be safe.
-test('AI endpoint may be blank, but an enabled AI endpoint must be public HTTPS', () => {
-  const app = { version: '1.0.0', extra: { eas: { projectId: '35a5ac4e-462a-46f9-85a7-087ffffdb41f' } }, android: { versionCode: 1 }, ios: { buildNumber: '1' } };
-  const base = { EXPO_PUBLIC_SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co', EXPO_PUBLIC_SUPABASE_ANON_KEY: 'sb_publishable_fixture', EXPO_PUBLIC_PRIVACY_POLICY_URL: 'https://get-proofpilot.lovable.app/privacy', EXPO_PUBLIC_SUPPORT_EMAIL: 'support@example.com', EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED: 'true', EXPO_PUBLIC_AUTH_REDIRECT_URL: 'https://get-proofpilot.lovable.app' };
+test('AI is optional, but an enabled endpoint must be the configured project function', () => {
+  const app = { name: 'ProofPilot', slug: 'proofpilot', owner: 'lamansami7', scheme: 'proofpilot', version: '1.0.0', extra: { eas: { projectId: '35a5ac4e-462a-46f9-85a7-087ffffdb41f' } }, android: { package: 'com.proofpilot.app', versionCode: 1 }, ios: { bundleIdentifier: 'com.proofpilot.app', buildNumber: '1' } };
+  const base = { EXPO_PUBLIC_SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co', EXPO_PUBLIC_SUPABASE_ANON_KEY: 'sb_publishable_fixture', EXPO_PUBLIC_PRIVACY_POLICY_URL: 'https://get-proofpilot.lovable.app/privacy', EXPO_PUBLIC_SUPPORT_EMAIL: 'support@proofpilot.app', EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED: 'true', EXPO_PUBLIC_AUTH_REDIRECT_URL: 'https://get-proofpilot.lovable.app' };
   assert.equal(releaseFailures(app, base).length, 3, 'AI intentionally disabled must not be a release failure');
   assert.equal(releaseFailures(app, { ...base, EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT: 'https://abcdefghijklmnopqrst.supabase.co/functions/v1/proofpilot-ai' }).length, 3);
-  for (const unsafe of ['http://ai.example.com', 'https://localhost:9000/ai', 'https://key@example.com/ai'])
+  for (const unsafe of ['http://ai.example.com', 'https://localhost:9000/ai', 'https://key@example.com/ai', 'https://other-project.supabase.co/functions/v1/proofpilot-ai', 'https://abcdefghijklmnopqrst.supabase.co/other-function'])
     assert.ok(releaseFailures(app, { ...base, EXPO_PUBLIC_PROOFPILOT_AI_ENDPOINT: unsafe }).some(v => v.includes('AI_ENDPOINT')), unsafe);
+});
+
+test('Supabase URLs are standard project origins and AI endpoints cannot send context elsewhere', () => {
+  const project = 'https://abcdefghijklmnopqrst.supabase.co';
+  assert.equal(validSupabaseUrl(project), true);
+  for (const unsafe of ['https://example.com', 'https://abcdefghijklmnopqrst.supabase.co/custom', 'https://abcdefghijklmnopqrst.supabase.co:8443', 'http://abcdefghijklmnopqrst.supabase.co', 'https://short.supabase.co']) {
+    assert.equal(validSupabaseUrl(unsafe), false, unsafe);
+  }
+  assert.equal(validAiEndpoint(`${project}/functions/v1/proofpilot-ai`, project), true);
+  assert.equal(validAiEndpoint(`${project}/functions/v1/proofpilot-ai/`, project), true);
+  assert.equal(validAiEndpoint('https://other-project.supabase.co/functions/v1/proofpilot-ai', project), false);
+  assert.equal(validAiEndpoint(`${project}/functions/v1/other-function`, project), false);
+});
+
+test('rejects reserved example domains, IP literals, single-label hosts, and whitespace', () => {
+  for (const url of ['https://example.com/privacy', 'https://sub.example.org', ' https://proofpilot.app ', 'https://192.168.1.1', 'https://10.0.0.8', 'https://172.16.2.3', 'https://[fd00::1]', 'https://com']) {
+    assert.equal(publicHttps(url), false, url);
+  }
+  for (const email of ['support@example.com', 'owner@example.org', 'support@service.invalid', ' support@proofpilot.app', 'support@foo..bar', 'support@-invalid.test']) {
+    assert.equal(publicSupportEmail(email), false, email);
+  }
+  assert.equal(publicSupportEmail('private-help@proofpilot.app'), true);
+});
+
+test('release config requires the native callback scheme and matching platform identifiers', () => {
+  const app = { name: 'ProofPilot', slug: 'proofpilot', owner: 'lamansami7', scheme: 'proofpilot', version: '1.0.0', extra: { eas: { projectId: '35a5ac4e-462a-46f9-85a7-087ffffdb41f' } }, android: { package: 'com.proofpilot.app', versionCode: 1 }, ios: { bundleIdentifier: 'com.proofpilot.app', buildNumber: '1' } };
+  const env = { EXPO_PUBLIC_SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co', EXPO_PUBLIC_SUPABASE_ANON_KEY: 'sb_publishable_fixture', EXPO_PUBLIC_PRIVACY_POLICY_URL: 'https://get-proofpilot.lovable.app/privacy', EXPO_PUBLIC_SUPPORT_EMAIL: 'support@proofpilot.app', EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED: 'true', EXPO_PUBLIC_AUTH_REDIRECT_URL: 'https://get-proofpilot.lovable.app', PROOFPILOT_LIVE_VERIFICATION_APPROVED: 'yes', PROOFPILOT_DEVICE_VERIFICATION_APPROVED: 'yes', PROOFPILOT_LEGAL_VERIFICATION_APPROVED: 'yes' };
+  assert.deepEqual(releaseFailures(app, env), []);
+  assert.ok(releaseFailures({ ...app, scheme: 'other' }, env).some(message => message.includes('scheme')));
+  assert.ok(releaseFailures({ ...app, android: { ...app.android, package: 'com.other.app' } }, env).some(message => message.includes('identifiers')));
+  assert.ok(releaseFailures({ ...app, ios: { ...app.ios, bundleIdentifier: 'com.other.app' } }, env).some(message => message.includes('identifiers')));
+});
+
+test('release config rejects placeholder project ownership and invalid shipping versions', () => {
+  const app = { name: 'ProofPilot', slug: 'proofpilot', owner: 'owner', scheme: 'proofpilot', version: '1.0.0', extra: { eas: { projectId: '35a5ac4e-462a-46f9-85a7-087ffffdb41f' } }, android: { package: 'com.proofpilot.app', versionCode: 1 }, ios: { bundleIdentifier: 'com.proofpilot.app', buildNumber: '1' } };
+  const env = { EXPO_PUBLIC_SUPABASE_URL: 'https://abcdefghijklmnopqrst.supabase.co', EXPO_PUBLIC_SUPABASE_ANON_KEY: 'sb_publishable_fixture', EXPO_PUBLIC_PRIVACY_POLICY_URL: 'https://get-proofpilot.lovable.app/privacy', EXPO_PUBLIC_SUPPORT_EMAIL: 'support@proofpilot.app', EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED: 'true', EXPO_PUBLIC_AUTH_REDIRECT_URL: 'https://get-proofpilot.lovable.app', PROOFPILOT_LIVE_VERIFICATION_APPROVED: 'yes', PROOFPILOT_DEVICE_VERIFICATION_APPROVED: 'yes', PROOFPILOT_LEGAL_VERIFICATION_APPROVED: 'yes' };
+  assert.deepEqual(releaseFailures(app, env), []);
+  assert.ok(releaseFailures({ ...app, owner: '' }, env).some(message => message.includes('EAS')));
+  assert.ok(releaseFailures({ ...app, version: '0.0.0' }, env).some(message => message.includes('version')));
+  assert.ok(releaseFailures({ ...app, version: 'v1.0' }, env).some(message => message.includes('version')));
+  assert.ok(releaseFailures({ ...app, android: { ...app.android, versionCode: 2_100_000_001 } }, env).some(message => message.includes('build identifiers')));
 });
