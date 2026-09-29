@@ -13,6 +13,7 @@ npm run test:migrations
 npm run test:tooling
 npm run test:release-config
 npm run test:client-secrets
+npm run test:staging-config
 npx tsc --noEmit --noUnusedLocals --noUnusedParameters
 npm run test:edge
 npm run check:edge
@@ -61,10 +62,11 @@ Create two distinct email-confirmed dedicated QA users. Set these only for the d
 - PROOFPILOT_ALLOW_STAGING_TESTS=yes
 
 ```sh
+npm run check:staging   # names any missing/unsafe variable; prints no values
 npm run test:live
 ```
 
-This creates/deletes uniquely identified QA purchases and retains their tombstones. It tests isolation, idempotency and stale resurrection denial, not full multi-device or email verification.
+This creates/deletes uniquely identified QA purchases and retains their tombstones. It tests isolation, idempotency and stale resurrection denial, not full multi-device or email verification. If it fails, the report names the exact stage that failed and never echoes a token, email or record value — paste that line into a private note, not into a public issue.
 
 ### Manual live acceptance (record evidence)
 

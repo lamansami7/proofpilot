@@ -20,6 +20,7 @@ npm test -- --runInBand
 npm run test:offline
 npm run test:migrations
 npm run test:client-secrets
+npm run test:staging-config
 ./node_modules/.bin/tsc --noEmit
 ./node_modules/.bin/tsc --noEmit --noUnusedLocals --noUnusedParameters
 npm run build:web
@@ -30,6 +31,11 @@ npm run preview
 `npm run check:secrets` scans the exported client bundle for privileged Supabase keys, provider
 secrets and private key material. It fails closed when no build exists and reports only the rule and
 file it matched, never the matched value.
+
+Before the destructive staging test, `npm run check:staging` verifies the staging window offline:
+it names any missing or unsafe variable (project reference, URL, public key, opt-in, two distinct
+test accounts) and refuses if a populated `.env.local` is not ignored by git. It never prints a
+value, so its output is safe to share.
 
 The preview serves `dist/` on `0.0.0.0:8080`. Development commands for native platforms: `npm run android`, `npm run ios`. These are **not signed release builds**.
 

@@ -15,6 +15,9 @@ approval variables were deliberately left unset.
 | Confirmed problem | Root cause and targeted fix | Regression evidence |
 |---|---|---|
 | Claim-type toggle exposed no state to assistive technology (7 failing browser tests) | `react-native-web@0.19` no longer maps `accessibilityState` to ARIA, so the `Return claim` / `Warranty claim` buttons rendered with no `aria-pressed`/`aria-selected`. The sibling `Chip` component already worked around this; the claim tabs did not. Added `aria-pressed={selected}` to the toggle buttons. | `e2e/purchase-workflow.spec.ts:313` passes at all seven widths; full suite 56/56 twice consecutively. No test, timeout or assertion was changed. |
+| Staging/live failure reporting could not tell the operator what to fix and could echo credentials if an error message contained them | `npm run test:live` reported a single generic failure line, and no offline check existed for the staging window. Added `scripts/check-staging-config.mjs` (names missing/unsafe variables, refuses a populated `.env.local` that git does not ignore) and `scripts/live-report.mjs` (assembles the failure message from fixed literals plus a stage name). | 8 new Node tests: every missing variable is named, values are never echoed (asserted against fixture URLs, keys and passwords), and stage reports are asserted not to contain token/email text. |
+| No automatic guard that client artifacts are free of privileged material | Added `scripts/scan-client-secrets.mjs` with `npm run check:secrets`; fails closed when no build exists; reports rule and file only. | 4 new Node tests; clean against the real `dist/` export. |
+| Deletion safeguards were only asserted for the happy path | Added five handler tests covering missing/malformed bearer, absent password proof, unlisted origin, non-JSON body and target injection — each must perform zero cloud work. | `npm run test:edge` now runs 23 tests. |
 
 ## Verified locally (exact counts)
 
@@ -26,6 +29,7 @@ approval variables were deliberately left unset.
 | Unit/component/integration | `npm test -- --runInBand` | **41 suites / 430 tests passed** |
 | Release/staging config | `npm run test:release-config` | **28 passed** |
 | Client artifact secret scan | `npm run test:client-secrets` | **4 passed** |
+| Staging window + live-failure reporting | `npm run test:staging-config` | **8 passed** |
 | Embedded PostgreSQL/RLS/RPC | `npm run test:migrations` | **26 checks passed** |
 | Offline shell generator | `npm run test:offline` | **1 passed** |
 | Patch compatibility | `npm run test:tooling` | **5 checks passed** |
