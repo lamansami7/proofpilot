@@ -12,15 +12,21 @@ npm test -- --runInBand
 npm run test:migrations
 npm run test:tooling
 npm run test:release-config
+npm run test:client-secrets
 npx tsc --noEmit --noUnusedLocals --noUnusedParameters
 npm run test:edge
 npm run check:edge
 npm run build:web
+npm run check:secrets
 npx playwright install chromium
 npm run test:e2e
 npm audit
 git diff --check
 ```
+
+`npm run check:secrets` is the only automatic check that a shipped client artifact contains no
+privileged key or provider secret. Run it against the exact build you intend to publish, after
+configuring the public `EXPO_PUBLIC_*` values, and confirm the report names no rule.
 
 `npm run preview` serves the export on 0.0.0.0:8080. Production hosting requires HTTPS, public shell assets/service-worker.js, SPA fallback to index.html, no caching of auth/API responses, and tested deep links. Service-worker cache contains static public assets only. Purge/version rollback and client update behavior need deployment testing.
 
@@ -141,3 +147,38 @@ For the lost-confirmation test, seed a disposable user's records and owned Stora
 With AI disabled, a 503 ai_unavailable only verifies disabled behavior: it does not prove deployed authentication/quota paths ran. Provider-enabled tests require server-only credentials/budget approval and separately recorded authentication, limits, malformed/oversized output, failures and timeouts. Fault injection results must be labeled as such, not as organic provider behavior.
 
 Classification: **VERIFIED LIVE:** none. **VERIFIED LOCALLY:** source/configuration inspection and separately recorded local suites. **REQUIRES CONFIGURATION:** project, public settings, CLI access, QA users and staging origin. **REQUIRES EXTERNAL SERVICE:** SMTP/Auth/Storage/Edge/provider tests. **REQUIRES REAL DEVICE:** installed-app recovery and two-device lifecycle/conflicts. **REQUIRES HUMAN/LEGAL DECISION:** region/retention, destructive QA approval, private deletion support and provider data handling.
+
+## Hosted inspection and handoff (2026-09-29)
+
+Read-only, credential-free observations from the release-readiness pass recorded in
+[docs/reviews/RELEASE_READINESS_2026-09-29.md](docs/reviews/RELEASE_READINESS_2026-09-29.md).
+
+- `delete-account` and `proofpilot-ai` on project `kqepazkcunxfitjexjqc` both answer an unauthenticated
+  `GET` with this repository's `{"error":"method_not_allowed"}` contract, so both are deployed and
+  ACTIVE. This proves deployment, not that migrations, secrets or the Auth allowlist are correct.
+- The project gateway is up and rejects keyless requests; the public policy URL serves a policy page.
+- **Unresolved claim mismatch:** the public web pages advertise reminders ("30 / 7 / 1 day reminders"),
+  an AI assistant and household sharing. `README.md` records notifications as unavailable and
+  migration `202609260001` disables household reads because no sharing/consent UI exists. Correct the
+  public claims or implement the features before launch; do not treat the pages as product evidence.
+- **Unresolved web-auth origin:** `https://get-proofpilot.lovable.app/auth` states web sign-in is not
+  connected yet. Until the web client (with SPA fallback) is served on the origin you allow-list,
+  confirmation and recovery links cannot complete a PKCE exchange there. Point
+  `EXPO_PUBLIC_AUTH_REDIRECT_URL` and the Supabase redirect allowlist at the origin that actually
+  serves the client, and add `proofpilot://auth/callback` for installed native builds.
+
+Closed in that pass: the claim-type toggle now sets `aria-pressed`, so the seven browser cases that
+assert toggle state pass; `npm run check:secrets` and `npm run test:client-secrets` now guard client
+artifacts; five additional deletion-safeguard handler tests assert that unauthenticated, stale-proof,
+wrong-origin, non-JSON and target-injecting requests perform zero cloud work.
+
+Cautions for the operator's own environment:
+
+- Do not run `supabase config push` against the hosted project: `supabase/config.toml` describes local
+  development (`site_url = "http://localhost:8080"`) and would overwrite the hosted Site URL. Configure
+  hosted Auth URLs in the dashboard, or in a project-specific config that names the production origin.
+- Supabase CLI installs and runs from npm (`npx supabase`), but every hosted command needs
+  `supabase login` or `SUPABASE_ACCESS_TOKEN`, and `supabase link --project-ref <ref>` writes
+  `supabase/.temp/`, which must stay out of git (already ignored).
+- `npm run test:live` refuses to run without an explicit staging reference, a matching public key,
+  `PROOFPILOT_ALLOW_STAGING_TESTS=yes` and both QA credential pairs. It is not a production test.

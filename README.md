@@ -19,11 +19,17 @@ npm run lint
 npm test -- --runInBand
 npm run test:offline
 npm run test:migrations
+npm run test:client-secrets
 ./node_modules/.bin/tsc --noEmit
 ./node_modules/.bin/tsc --noEmit --noUnusedLocals --noUnusedParameters
 npm run build:web
+npm run check:secrets
 npm run preview
 ```
+
+`npm run check:secrets` scans the exported client bundle for privileged Supabase keys, provider
+secrets and private key material. It fails closed when no build exists and reports only the rule and
+file it matched, never the matched value.
 
 The preview serves `dist/` on `0.0.0.0:8080`. Development commands for native platforms: `npm run android`, `npm run ios`. These are **not signed release builds**.
 

@@ -503,6 +503,10 @@ export function ClaimGenerator({
               accessibilityState={{
                 selected,
               }}
+              // react-native-web 0.19 no longer maps accessibilityState to ARIA,
+              // so the toggle state must be exposed explicitly or assistive
+              // technology cannot tell which claim type is active.
+              aria-pressed={selected}
               accessibilityHint={
                 selected
                   ? 'Selected'
