@@ -1,4 +1,4 @@
-import { NATIVE_AUTH_REDIRECT, nativeRecoveryCode } from '../lib/authRedirect';
+import { getAuthRedirectUrl, nativeRecoveryCode } from '../lib/authRedirect';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, Linking, Platform } from 'react-native';
 import type { User } from '@supabase/supabase-js';
@@ -57,9 +57,9 @@ export function useSession() {
     user, loading, error, recovery, configured: Boolean(supabase),
     retry: () => setAttempt(value => value + 1),
     signIn: (email: string, password: string) => supabase!.auth.signInWithPassword({ email, password }),
-    signUp: (email: string, password: string) => supabase!.auth.signUp({ email, password, options: { emailRedirectTo: Platform.OS === 'web' ? window.location.origin : NATIVE_AUTH_REDIRECT } }),
+    signUp: (email: string, password: string) => supabase!.auth.signUp({ email, password, options: { emailRedirectTo: getAuthRedirectUrl() } }),
     resetPassword: async (email: string) => {
-      const { error: failure } = await supabase!.auth.resetPasswordForEmail(email, { redirectTo: Platform.OS === 'web' ? window.location.origin : NATIVE_AUTH_REDIRECT });
+      const { error: failure } = await supabase!.auth.resetPasswordForEmail(email, { redirectTo: getAuthRedirectUrl() });
       if (failure) throw failure;
     },
     updatePassword: async (password: string) => {
