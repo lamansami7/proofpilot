@@ -1,5 +1,6 @@
 import { getAuthRedirectUrl, nativeRecoveryCode } from '../lib/authRedirect';
 import { useEffect, useRef, useState } from 'react';
+import { resolveSessionRestoreTimeout } from '../lib/sessionRestore';
 import { AppState, Linking, Platform } from 'react-native';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
@@ -19,7 +20,7 @@ export function useSession() {
     setLoading(true); setError(null);
     const timer = setTimeout(() => {
       if (active) { setError('Session restoration timed out. Check your connection and retry.'); setLoading(false); }
-    }, 15000);
+    }, resolveSessionRestoreTimeout());
     const { data } = client.auth.onAuthStateChange((event, session) => {
       if (!active) return;
       eventSeen = true;
@@ -59,7 +60,16 @@ export function useSession() {
     signIn: (email: string, password: string) => supabase!.auth.signInWithPassword({ email, password }),
     signUp: (email: string, password: string) => supabase!.auth.signUp({ email, password, options: { emailRedirectTo: getAuthRedirectUrl() } }),
     resetPassword: async (email: string) => {
+      // The recovery link must return to the same production origin that
+      // EXPO_PUBLIC_AUTH_REDIRECT_URL names, and that origin must be listed in
+      // Supabase's allowed redirect URLs. Never localhost in production.
       const { error: failure } = await supabase!.auth.resetPasswordForEmail(email, { redirectTo: getAuthRedirectUrl() });
+      if (failure) throw failure;
+    },
+    /** Re-sends a signup confirmation. The caller must always show a neutral
+     *  result so the response never reveals whether an address has an account. */
+    resendConfirmation: async (email: string) => {
+      const { error: failure } = await supabase!.auth.resend({ type: 'signup', email, options: { emailRedirectTo: getAuthRedirectUrl() } });
       if (failure) throw failure;
     },
     updatePassword: async (password: string) => {

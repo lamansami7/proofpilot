@@ -205,6 +205,7 @@ function ProofPilotApp() {
         <StatusBar style="dark" />
         <AuthScreen
           onResetPassword={session.resetPassword}
+          onResendConfirmation={session.resendConfirmation}
           onSubmit={async (email, password, signUp) => {
             const { data, error } = signUp
               ? await session.signUp(email, password)

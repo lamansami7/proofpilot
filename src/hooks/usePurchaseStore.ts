@@ -1,6 +1,7 @@
 import NetInfo from '@react-native-community/netinfo';
 import { withStorageLock } from '../lib/storageTransaction';
 import { AppState, Platform } from 'react-native';
+import { MAX_SYNC_ROUNDS, canRetrySync, isRetryableSyncError, syncRetryDelay } from '../lib/syncBackoff';
 import { removeUnreferencedFile } from '../lib/fileMaintenance';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { clientForAccount } from '../lib/supabase';
@@ -25,11 +26,18 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
   const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine !== false));
   const engine = useRef<LocalPurchaseStore | null>(null);
   const syncRunning = useRef<LocalPurchaseStore | null>(null);
+  const syncAttempt = useRef(0);
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const account = useRef(userId); account.current = userId;
+  // A pending backoff must never outlive the account or the component.
+  const cancelScheduledSync = useCallback(() => {
+    if (syncTimer.current !== null) { clearTimeout(syncTimer.current); syncTimer.current = null; }
+  }, []);
 
   useEffect(() => {
     if (!enabled) { engine.current = null; setItems([]); setHydrated(false); return; }
     let cancelled = false;
+    cancelScheduledSync(); syncAttempt.current = 0;
     const key = storageKeyFor(userId);
     const store = new LocalPurchaseStore(snapshot => AsyncStorage.setItem(key, JSON.stringify(snapshot)), async () => readSnapshot(await AsyncStorage.getItem(key)), operation => withStorageLock(key, operation));
     engine.current = null; setHydrated(false); setItems([]); setStorageError(null); setSyncError(null);
@@ -43,8 +51,8 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
         if (!cancelled) { setStorageError('Saved records could not be read. Reload to retry. Existing storage has not been overwritten.'); setHydrated(true); }
       }
     })();
-    return () => { cancelled = true; engine.current = null; };
-  }, [userId, generation, enabled]);
+    return () => { cancelled = true; cancelScheduledSync(); engine.current = null; };
+  }, [userId, generation, enabled, cancelScheduledSync]);
 
   const retryCleanup = useCallback(async () => {
     const store = engine.current;
@@ -76,41 +84,63 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
     const store = engine.current;
     const owner = userId;
     if (!store || !owner || syncRunning.current === store) return;
+    // A fresh trigger (manual retry, reconnect, new edit) supersedes any pending backoff.
+    cancelScheduledSync();
     syncRunning.current = store; setSyncStatus('syncing'); setSyncError(null);
     const current = () => engine.current === store && account.current === owner;
+    const outboxPending = () => store.snapshot.pending.length > 0 || store.snapshot.deleted.length > 0;
     try {
-      // Fetch permanent server tombstones before uploads: deletion wins over stale offline edits.
       const client = await clientForAccount(owner);
-      if (!current()) return;
-      const deleted = await listDeletedPurchases(client);
-      if (!current()) return;
-      await publish(store, s => applyRemoteDeletions(s, deleted));
-      // Process durable tombstones first. Network failure leaves the outbox intact.
-      while (current() && (store.snapshot.deleted.length || store.snapshot.pending.length)) {
-        const id = store.snapshot.deleted[0];
-        if (id !== undefined) {
-          await deletePurchase(id, client);
-          if (!current()) return;
-          await publish(store, s => ({ ...s, deleted: s.deleted.filter(value => value !== id) }));
-        } else {
-          const pendingId = store.snapshot.pending[0];
-          const purchase = store.snapshot.items.find(item => item.id === pendingId);
-          if (purchase) await savePurchase(purchase, client);
-          if (!current()) return;
-          await publish(store, s => ({ ...s, pending: JSON.stringify(s.items.find(item => item.id === pendingId)) === JSON.stringify(purchase) ? s.pending.filter(value => value !== pendingId) : s.pending }));
+      // One round drains the outbox, then merges the cloud. A local edit made while
+      // the round was in flight re-queues work, so run a bounded number of extra
+      // rounds instead of stranding that edit until the next trigger. The bound keeps
+      // a constantly-editing device from spinning forever.
+      for (let round = 0; round < MAX_SYNC_ROUNDS && current(); round++) {
+        // Fetch permanent server tombstones before uploads: deletion wins over stale offline edits.
+        const deleted = await listDeletedPurchases(client);
+        if (!current()) return;
+        await publish(store, s => applyRemoteDeletions(s, deleted));
+        // Process durable tombstones first. Network failure leaves the outbox intact.
+        while (current() && (store.snapshot.deleted.length || store.snapshot.pending.length)) {
+          const id = store.snapshot.deleted[0];
+          if (id !== undefined) {
+            await deletePurchase(id, client);
+            if (!current()) return;
+            await publish(store, s => ({ ...s, deleted: s.deleted.filter(value => value !== id) }));
+          } else {
+            const pendingId = store.snapshot.pending[0];
+            const purchase = store.snapshot.items.find(item => item.id === pendingId);
+            if (purchase) await savePurchase(purchase, client);
+            if (!current()) return;
+            await publish(store, s => ({ ...s, pending: JSON.stringify(s.items.find(item => item.id === pendingId)) === JSON.stringify(purchase) ? s.pending.filter(value => value !== pendingId) : s.pending }));
+          }
         }
+        if (!current()) return;
+        const cloud = await listPurchases(client);
+        if (!current()) return;
+        const remoteDeleted = await listDeletedPurchases(client);
+        if (!current()) return;
+        await publish(store, s => applyRemoteDeletions(mergeCloud(s, cloud), remoteDeleted));
+        if (!outboxPending()) break;
       }
       if (!current()) return;
-      const cloud = await listPurchases(client);
-      if (!current()) return;
-      const remoteDeleted = await listDeletedPurchases(client);
-      if (!current()) return;
-      await publish(store, s => applyRemoteDeletions(mergeCloud(s, cloud), remoteDeleted));
-      if (current()) setSyncStatus(store.snapshot.pending.length || store.snapshot.deleted.length ? 'error' : 'synced');
-    } catch {
-      if (current()) { setSyncStatus('error'); setSyncError('Cloud sync did not finish. Device records and pending changes are retained. Check your connection and database migration, then retry.'); }
+      syncAttempt.current = 0;
+      setSyncStatus(outboxPending() ? 'error' : 'synced');
+    } catch (error) {
+      if (current()) {
+        // Bounded backoff: only transient failures are retried, and only while budget remains.
+        if (isRetryableSyncError(error) && canRetrySync(syncAttempt.current)) {
+          syncAttempt.current += 1;
+          setSyncStatus('syncing');
+          syncTimer.current = setTimeout(() => { syncTimer.current = null; void retrySync(); }, syncRetryDelay(syncAttempt.current));
+        } else {
+          syncAttempt.current = 0;
+          setSyncStatus('error');
+          setSyncError('Cloud sync did not finish. Device records and pending changes are retained. Check your connection and database migration, then retry.');
+        }
+      }
     } finally { if (syncRunning.current === store) syncRunning.current = null; }
-  }, [userId, publish]);
+  }, [userId, publish, cancelScheduledSync]);
 
   useEffect(() => { if (hydrated) void retrySync(); }, [hydrated, retrySync]);
   useEffect(() => {
@@ -158,7 +188,7 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
   const replaceAll = useCallback((next: Purchase[]) => change(s => replaceItems(s, next, signedIn)), [change, signedIn]);
   const restoreBackup = useCallback((records: Purchase[]) => change(s => upsertEach(s, records, signedIn)), [change, signedIn]);
   const restoreSamples = useCallback(() => change(s => upsertEach(s, (__DEV__ ? demoPurchases : []).filter(demo => !s.items.some(item => item.id === demo.id)), signedIn)), [change, signedIn]);
-  const suspend = async () => { const store = engine.current; engine.current = null; if (store) await store.drain(); };
+  const suspend = async () => { cancelScheduledSync(); syncAttempt.current = 0; const store = engine.current; engine.current = null; if (store) await store.drain(); };
   const reload = () => setGeneration(value => value + 1);
   return { suspend, reload, items, hydrated, saving, storageError, cleanupError, retryCleanup, syncStatus, syncError, online, upsert, remove, removeMany, replaceAll, restoreSamples, restoreBackup, retrySync };
 }

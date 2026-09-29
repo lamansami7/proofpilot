@@ -44,6 +44,8 @@ All four migrations must be applied in filename order, ending with `202609260002
 
 Configure verified SMTP sender/domain, SPF/DKIM/DMARC, delivery/bounce monitoring and email templates in Supabase. Configure Site URL to the owned HTTPS web origin and exact redirect allowlist entries for that origin and `proofpilot://auth/callback`. PKCE recovery must be initiated and opened on the same installed app/device. Test expired/reused/wrong-device links, email confirmation, reset, sign-out, restart and session refresh. Never use wildcard production redirect URLs.
 
+`EXPO_PUBLIC_AUTH_REDIRECT_URL` must name the same HTTPS origin you add to the Supabase Auth redirect allowlist (for production, `https://get-proofpilot.lovable.app`). `npm run check:release` rejects it unless it is public HTTPS with no credentials, query string or fragment, and never accepts localhost. If the two lists disagree, confirmation and password-recovery links return the user to a page Supabase will not accept. The "Resend confirmation email" action on the sign-up screen re-sends a signup confirmation and always answers with the same neutral wording, so it never reveals whether an address has an account.
+
 Create two distinct email-confirmed dedicated QA users. Set securely:
 
 - EXPO_PUBLIC_SUPABASE_URL; EXPO_PUBLIC_SUPABASE_ANON_KEY (public client key only)
