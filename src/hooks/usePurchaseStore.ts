@@ -23,6 +23,10 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
   const [storageError, setStorageError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('local');
   const [syncError, setSyncError] = useState<string | null>(null);
+  // Local-first honesty: the exact number of changes still waiting to reach the
+  // server, so the UI can say "3 changes saved on this device" rather than a
+  // vague "local only".
+  const [pendingChanges, setPendingChanges] = useState(0);
   const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine !== false));
   const engine = useRef<LocalPurchaseStore | null>(null);
   const syncRunning = useRef<LocalPurchaseStore | null>(null);
@@ -35,18 +39,18 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
   }, []);
 
   useEffect(() => {
-    if (!enabled) { engine.current = null; setItems([]); setHydrated(false); return; }
+    if (!enabled) { engine.current = null; setItems([]); setHydrated(false); setPendingChanges(0); return; }
     let cancelled = false;
     cancelScheduledSync(); syncAttempt.current = 0;
     const key = storageKeyFor(userId);
     const store = new LocalPurchaseStore(snapshot => AsyncStorage.setItem(key, JSON.stringify(snapshot)), async () => readSnapshot(await AsyncStorage.getItem(key)), operation => withStorageLock(key, operation));
-    engine.current = null; setHydrated(false); setItems([]); setStorageError(null); setSyncError(null);
+    engine.current = null; setHydrated(false); setItems([]); setStorageError(null); setSyncError(null); setPendingChanges(0);
     setSyncStatus(userId ? 'syncing' : 'local');
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(key);
         store.snapshot = raw ? readSnapshot(raw) : snapshotFor();
-        if (!cancelled) { engine.current = store; setItems(store.snapshot.items); setHydrated(true); }
+        if (!cancelled) { engine.current = store; setItems(store.snapshot.items); setPendingChanges(store.snapshot.pending.length + store.snapshot.deleted.length); setHydrated(true); }
       } catch {
         if (!cancelled) { setStorageError('Saved records could not be read. Reload to retry. Existing storage has not been overwritten.'); setHydrated(true); }
       }
@@ -73,7 +77,7 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
   const publish = useCallback(async (store: LocalPurchaseStore, change: (s: Snapshot) => Snapshot) => {
     try {
       const snapshot = await store.mutate(change);
-      if (engine.current === store) { setItems(snapshot.items); setStorageError(null); void retryCleanup(); }
+      if (engine.current === store) { setItems(snapshot.items); setPendingChanges(snapshot.pending.length + snapshot.deleted.length); setStorageError(null); void retryCleanup(); }
     } catch (error) {
       if (engine.current === store) setStorageError(error instanceof PurchaseConflictError ? error.message : 'Could not save on this device. Your previous records are unchanged. Check device storage and retry.');
       throw error;
@@ -190,7 +194,7 @@ export function usePurchaseStore(userId?: string | null, enabled = true) {
   const restoreSamples = useCallback(() => change(s => upsertEach(s, (__DEV__ ? demoPurchases : []).filter(demo => !s.items.some(item => item.id === demo.id)), signedIn)), [change, signedIn]);
   const suspend = async () => { cancelScheduledSync(); syncAttempt.current = 0; const store = engine.current; engine.current = null; if (store) await store.drain(); };
   const reload = () => setGeneration(value => value + 1);
-  return { suspend, reload, items, hydrated, saving, storageError, cleanupError, retryCleanup, syncStatus, syncError, online, upsert, remove, removeMany, replaceAll, restoreSamples, restoreBackup, retrySync };
+  return { suspend, reload, items, hydrated, saving, storageError, cleanupError, retryCleanup, syncStatus, syncError, online, pendingChanges, upsert, remove, removeMany, replaceAll, restoreSamples, restoreBackup, retrySync };
 }
 
 /** Appends missing sample records without touching existing ones or queueing unchanged rows. */

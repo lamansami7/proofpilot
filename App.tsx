@@ -324,15 +324,21 @@ function ProofPilotApp() {
                       {store.saving
                         ? 'Saving…'
                         : session.user && !store.online
-                          ? 'Offline · saved locally'
+                          ? store.pendingChanges > 0
+                            ? `Offline · ${store.pendingChanges} saved here`
+                            : 'Offline · saved locally'
                           : !session.user
                             ? store.syncStatus === 'syncing'
                               ? 'Syncing…'
                               : 'Local storage'
                             : store.syncStatus === 'syncing'
-                              ? 'Syncing…'
+                              ? store.pendingChanges > 0
+                                ? `Syncing ${store.pendingChanges}…`
+                                : 'Syncing…'
                               : store.syncStatus === 'error'
-                                ? 'Sync needs attention'
+                                ? store.pendingChanges > 0
+                                  ? `Sync needs attention · ${store.pendingChanges} held`
+                                  : 'Sync needs attention'
                                 : store.syncStatus === 'synced'
                                   ? 'Synced'
                                   : 'Local storage'}
@@ -350,6 +356,9 @@ function ProofPilotApp() {
                     userEmail={userEmail}
                     sampleVisible={sampleVisible}
                     aiConfigured={aiConfigured}
+                    signedIn={Boolean(session.user)}
+                    online={store.online}
+                    pendingChanges={store.pendingChanges}
                     onAdd={openAddFlow}
                     onOpen={openPurchase}
                     onPurchases={() => setTab('Purchases')}

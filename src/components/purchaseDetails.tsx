@@ -4,8 +4,8 @@ import { Platform, Share, StyleSheet, Text, View } from 'react-native';
 import { Feather } from './Feather';
 import { colors, radius, spacing, type, shadows } from '../design/tokens';
 import { persistDocumentUri } from '../lib/documents';
+import { coverageBadge, customDeadlineBadge } from '../lib/coverage';
 import {
-  deadlineStatus,
   deriveProtection,
   documentKindLabel,
   formatDate,
@@ -23,15 +23,6 @@ import { DocumentViewer, type ViewableDocument } from './documentViewer';
 
 function protectionTone(status: Purchase['protectionStatus']): BadgeTone {
   return status === 'protected' ? 'success' : status === 'attention' ? 'warning' : 'neutral';
-}
-
-function windowBadge(date: string | null): { label: string; tone: BadgeTone } {
-  const status = deadlineStatus(date);
-  if (!date || !status) return { label: 'Not added', tone: 'neutral' };
-  if (status.status === 'overdue') return { label: 'Passed', tone: 'danger' };
-  if (status.status === 'today') return { label: 'Last day', tone: 'danger' };
-  if (status.status === 'urgent') return { label: `${status.days} days left`, tone: 'warning' };
-  return { label: `${status.days} days left`, tone: 'success' };
 }
 
 export function PurchaseDetails({
@@ -58,8 +49,8 @@ export function PurchaseDetails({
   const [busy, setBusy] = useState(false);
 
   if (!purchase) return null;
-  const returnBadge = windowBadge(purchase.returnDeadline);
-  const warrantyBadge = windowBadge(purchase.warrantyEnd);
+  const returnBadge = coverageBadge('return', purchase.returnDeadline);
+  const warrantyBadge = coverageBadge('warranty', purchase.warrantyEnd);
   const extraDeadlines = purchase.deadlines.filter((d) => d.type === 'rebate' || d.type === 'custom');
   const nextDeadline = nextDeadlineFor(purchase);
 
@@ -161,7 +152,7 @@ export function PurchaseDetails({
       date: d.date,
       icon: 'calendar' as const,
       done: Boolean(d.completed),
-      badge: windowBadge(d.date),
+      badge: customDeadlineBadge(d.date),
     })),
   ].filter(Boolean) as Array<{ label: string; date: string; icon: FeatherIconName; done: boolean; badge?:{label:string;tone:BadgeTone} }>;
 
@@ -340,7 +331,7 @@ export function PurchaseDetails({
         ) : (
           <View style={styles.emptyDoc}>
             <Feather name="file-minus" size={18} color={colors.subtle} />
-            <Text style={[type.bodySmall, { textAlign: 'center' }]}>No documents yet. Use “Add document” to attach a receipt or warranty file.</Text>
+            <Text style={[type.bodySmall, { textAlign: 'center' }]}>Add a receipt or document to keep it with this purchase. Files stay on this device.</Text>
           </View>
         )}
       </Card>

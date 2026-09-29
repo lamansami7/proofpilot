@@ -3,7 +3,7 @@ import {Pressable} from 'react-native';
 import {act,create,ReactTestRenderer} from 'react-test-renderer';
 import * as DocumentPicker from 'expo-document-picker';
 import {PurchaseFlow} from '../components/purchaseFlow';
-import {Button} from '../components/ui';
+import {Banner,Button} from '../components/ui';
 import {demoPurchases} from '../data/demoPurchases';
 import {persistDocumentUri} from '../lib/documents';
 jest.mock('expo-document-picker',()=>({getDocumentAsync:jest.fn()}));
@@ -31,4 +31,37 @@ test('duplicate save activation commits only one purchase',async()=>{
  act(()=>{first=commit();second=commit();});
  expect(save).toHaveBeenCalledTimes(1);
  await act(async()=>{resolve();await Promise.all([first,second]);});
+});
+
+// --- A failed attach must explain itself instead of silently doing nothing ---
+const startPress=(label:string)=>renderer.root.findAllByType(Pressable).find(p=>p.props.accessibilityLabel===label)!;
+const messages=()=>renderer.root.findAllByType(Banner).map(b=>String(b.props.message??''));
+test('a rejected file shows the real reason and keeps the form usable',async()=>{
+ jest.mocked(DocumentPicker.getDocumentAsync).mockResolvedValueOnce({canceled:false,assets:[{name:'huge.pdf',uri:'blob:x',mimeType:'application/pdf',size:99_000_000}]});
+ jest.mocked(persistDocumentUri).mockRejectedValueOnce(new Error('Choose a non-empty document no larger than 20 MB.'));
+ await act(async()=>{renderer=create(<PurchaseFlow {...base}/>);});
+ await act(async()=>{await startPress('Upload a receipt or document').props.onPress();});
+ expect(messages().join(' | ')).toContain('no larger than 20 MB');
+ // The user can still continue manually; nothing is trapped.
+ expect(startPress('Enter details manually')).toBeDefined();
+});
+test('an unexpected storage failure never shows a raw technical error',async()=>{
+ jest.mocked(DocumentPicker.getDocumentAsync).mockResolvedValueOnce({canceled:false,assets:[{name:'r.png',uri:'blob:x',mimeType:'image/png',size:10}]});
+ jest.mocked(persistDocumentUri).mockRejectedValueOnce(new Error("ENOENT: open '/private/user/receipt.png'"));
+ await act(async()=>{renderer=create(<PurchaseFlow {...base}/>);});
+ await act(async()=>{await startPress('Upload a receipt or document').props.onPress();});
+ const shown=messages().join(' | ');
+ expect(shown).toContain('could not be attached');
+ expect(shown).not.toMatch(/ENOENT|\/private\/|blob:/);
+});
+test('a second attempt clears the previous failure so stale errors do not linger',async()=>{
+ jest.mocked(DocumentPicker.getDocumentAsync).mockResolvedValueOnce({canceled:false,assets:[{name:'r.png',uri:'blob:x',mimeType:'image/png',size:10}]});
+ jest.mocked(persistDocumentUri).mockRejectedValueOnce(new Error('File could not be read.'));
+ await act(async()=>{renderer=create(<PurchaseFlow {...base}/>);});
+ await act(async()=>{await startPress('Upload a receipt or document').props.onPress();});
+ expect(messages().join(' | ')).toContain('could not be read');
+ jest.mocked(DocumentPicker.getDocumentAsync).mockResolvedValueOnce({canceled:false,assets:[{name:'ok.png',uri:'blob:y',mimeType:'image/png',size:10}]});
+ jest.mocked(persistDocumentUri).mockResolvedValueOnce('proofpilot-file:good');
+ await act(async()=>{await startPress('Upload a receipt or document').props.onPress();});
+ expect(messages().join(' | ')).not.toContain('could not be read');
 });

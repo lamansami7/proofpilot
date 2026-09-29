@@ -2,21 +2,8 @@ import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Feather } from './Feather';
 import { colors, radius, shadows, spacing, type } from '../design/tokens';
-import {
-  actionNeeded,
-  completedDeadlineCount,
-  documentInventory,
-  expiringWarranties,
-  formatDate,
-  formatMoney,
-  greeting,
-  missingProofCount,
-  protectionSummary,
-  recentPurchases,
-  todayLine,
-  upcomingDeadlines,
-  type NormalizedDeadline,
-} from '../lib/purchaseSelectors';
+import { buildDashboardModel } from '../lib/dashboardModel';
+import { formatDate, formatMoney, greeting, todayLine, type NormalizedDeadline, type ProtectionSummary } from '../lib/purchaseSelectors';
 import type { ActionNeeded, FeatherIconName, Purchase } from '../types/purchase';
 import { Badge, Banner, Button, Card, EmptyState, SectionHeader } from './ui';
 import { AttentionRow, DeadlineRow, ProductTile, PurchaseCard } from './purchaseComponents';
@@ -27,6 +14,10 @@ type DashboardProps = {
   userEmail?: string | null;
   sampleVisible: boolean;
   aiConfigured: boolean;
+  /** Signed-out devices never sync, so the local-first banner stays hidden by default. */
+  signedIn?: boolean;
+  online?: boolean;
+  pendingChanges?: number;
   onAdd: () => void;
   onOpen: (purchase: Purchase) => void;
   onPurchases: () => void;
@@ -52,17 +43,19 @@ export function Dashboard(props: DashboardProps) {
     onDismissSample,
     onClearSamples,
     onRestoreSamples,
+    signedIn = false,
+    online = true,
+    pendingChanges = 0,
   } = props;
-  const summary = useMemo(() => protectionSummary(items), [items]);
-  const actions = useMemo(() => actionNeeded(items), [items]);
-  const upcoming = useMemo(() => upcomingDeadlines(items), [items]);
-  const docs = useMemo(() => documentInventory(items), [items]);
-  const recent = useMemo(() => recentPurchases(items).slice(0, 3), [items]);
-  const expiringSoon = useMemo(() => expiringWarranties(items).length, [items]);
-  const completedCount = useMemo(() => completedDeadlineCount(items), [items]);
-  const upcomingWithin30 = useMemo(() => upcoming.filter((d) => d.days <= 30).length, [upcoming]);
+  // One pass over the library produces every figure below. Previously each of
+  // these was derived independently on every render, which re-parsed every
+  // deadline and re-derived protection status once per consumer.
+  const model = useMemo(() => buildDashboardModel(items), [items]);
+  const { summary, actions, upcoming, documents: docs, completedCount, upcomingWithin30 } = model;
+  const recent = useMemo(() => model.recent.slice(0, 3), [model]);
+  const expiringSoon = model.expiringWarranties.length;
   const missingProof = summary.missingReceipts;
-  const noFiles = useMemo(() => missingProofCount(items), [items]);
+  const noFiles = model.noFiles;
 
   return (
     <>
@@ -108,6 +101,27 @@ export function Dashboard(props: DashboardProps) {
               <Button size="sm" variant="ghost" label="Keep them" onPress={onDismissSample} />
             </View>
           </Banner>
+        </View>
+      ) : null}
+
+      {signedIn && (!online || pendingChanges > 0) ? (
+        <View style={{ marginBottom: spacing.xl }}>
+          <Banner
+            tone={online ? 'info' : 'warning'}
+            icon="cloud-off"
+            title={
+              !online
+                ? pendingChanges > 0
+                  ? `You're offline · ${pendingChanges} change${pendingChanges === 1 ? '' : 's'} saved on this device`
+                  : "You're offline · your purchases are still available"
+                : `${pendingChanges} change${pendingChanges === 1 ? '' : 's'} waiting to sync`
+            }
+            message={
+              !online
+                ? 'Everything you add or edit is stored locally and will sync automatically when you reconnect. Nothing is lost.'
+                : 'Your records are safe on this device. ProofPilot is uploading the most recent changes now.'
+            }
+          />
         </View>
       ) : null}
 
@@ -271,9 +285,9 @@ export function Dashboard(props: DashboardProps) {
               ) : (
                 <EmptyState
                   compact
-                  icon="calendar"
-                  title="No upcoming deadlines"
-                  message="Add return or warranty dates to a purchase and they will appear here."
+                  icon="check-circle"
+                  title="You're all caught up"
+                  message="Nothing needs your attention in the next few months. Add a return or warranty date to a purchase and it will show up here."
                   actionLabel="Protect a purchase"
                   onAction={onAdd}
                 />
@@ -352,7 +366,7 @@ function ProtectionOverview({
   onDeadlines,
   onPurchases,
 }: {
-  summary: ReturnType<typeof protectionSummary>;
+  summary: ProtectionSummary;
   upcoming: NormalizedDeadline[];
   actions: ActionNeeded[];
   noFiles: number;

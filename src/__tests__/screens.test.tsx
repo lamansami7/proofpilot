@@ -182,3 +182,47 @@ describe('Purchase details', () => {
     expect(renderer.toJSON()).toBeNull();
   });
 });
+
+// Local-first should feel intentional, not broken: when work is waiting to sync
+// the home screen has to say so plainly and reassure that nothing is lost.
+describe('Dashboard local-first banner', () => {
+  const baseProps = {
+    isPhone: false, userEmail: null, sampleVisible: false, aiConfigured: false,
+    onAdd: noop, onOpen: noop, onPurchases: noop, onDeadlines: noop, onVault: noop,
+    onDismissSample: noop, onClearSamples: noop, onRestoreSamples: noop,
+  };
+
+  test('a signed-out local-only device is never nagged about syncing', () => {
+    const renderer = render(<Dashboard {...baseProps} items={items} pendingChanges={3} online={false} signedIn={false} />);
+    expect(hasText(renderer, "You're offline")).toBe(false);
+    expect(hasText(renderer, 'waiting to sync')).toBe(false);
+  });
+
+  test('offline with queued work states the count and reassures the user', () => {
+    const renderer = render(<Dashboard {...baseProps} items={items} signedIn online={false} pendingChanges={3} />);
+    expect(hasText(renderer, "You're offline · 3 changes saved on this device")).toBe(true);
+    expect(hasText(renderer, 'Nothing is lost')).toBe(true);
+  });
+
+  test('offline with nothing queued still confirms purchases are available', () => {
+    const renderer = render(<Dashboard {...baseProps} items={items} signedIn online={false} pendingChanges={0} />);
+    expect(hasText(renderer, "You're offline · your purchases are still available")).toBe(true);
+  });
+
+  test('a single queued change reads naturally in the singular', () => {
+    const renderer = render(<Dashboard {...baseProps} items={items} signedIn online={false} pendingChanges={1} />);
+    expect(hasText(renderer, "You're offline · 1 change saved on this device")).toBe(true);
+  });
+
+  test('online but holding changes says so without implying data loss', () => {
+    const renderer = render(<Dashboard {...baseProps} items={items} signedIn online pendingChanges={2} />);
+    expect(hasText(renderer, '2 changes waiting to sync')).toBe(true);
+    expect(hasText(renderer, 'safe on this device')).toBe(true);
+  });
+
+  test('a fully synced signed-in account sees no banner at all', () => {
+    const renderer = render(<Dashboard {...baseProps} items={items} signedIn online pendingChanges={0} />);
+    expect(hasText(renderer, "You're offline")).toBe(false);
+    expect(hasText(renderer, 'waiting to sync')).toBe(false);
+  });
+});

@@ -108,3 +108,30 @@ test('a successful pass clears the retry budget so ordinary use never accumulate
     expect(current.syncStatus).toBe('synced');
   } finally { jest.useRealTimers(); }
 });
+
+// Local-first honesty: the UI must be able to say exactly how much work is held
+// on the device, and that number must reach zero once the outbox drains.
+test('pendingChanges reports the true outbox size and clears only after the upload lands', async () => {
+  mocked(listDeletedPurchases).mockRejectedValue(new Error('row-level security policy violation'));
+  await act(async () => { renderer = create(<Harness owner="owner" />); });
+  await settle();
+  expect(current.pendingChanges).toBe(0);
+  expect(current.syncStatus).toBe('error');
+
+  await act(async () => { await current.upsert({ ...demoPurchases[0], id: 'held-locally' }); });
+  expect(current.pendingChanges).toBe(1);
+  // A second edit to a different record is counted separately.
+  await act(async () => { await current.upsert({ ...demoPurchases[1], id: 'also-held' }); });
+  expect(current.pendingChanges).toBe(2);
+  // Deleting one moves it from the upload queue to the delete queue, not off the books.
+  await act(async () => { await current.remove('also-held'); });
+  expect(current.pendingChanges).toBe(2);
+
+  // Once the server is reachable again the queue drains to zero.
+  mocked(listDeletedPurchases).mockImplementation(async () => []);
+  mocked(deletePurchase).mockImplementation(async () => undefined);
+  await act(async () => { await current.retrySync(); });
+  for (let index = 0; index < 25; index++) await act(async () => { await Promise.resolve(); });
+  expect(current.pendingChanges).toBe(0);
+  expect(current.syncStatus).toBe('synced');
+});

@@ -56,15 +56,15 @@ export function nextDeadlineFor(purchase: Purchase, now = new Date()): Normalize
 }
 
 export type ProtectionSummary = { total: number; protected: number; attention: number; unprotected: number; missingReceipts: number; missingWarrantyInfo: number; valueProtected: number };
-export function protectionSummary(items: Purchase[]): ProtectionSummary {
+export function protectionSummary(items: Purchase[], now = new Date()): ProtectionSummary {
   return {
     total: items.length,
-    protected: items.filter((item) => deriveProtection(item) === 'protected').length,
-    attention: items.filter((item) => deriveProtection(item) === 'attention').length,
-    unprotected: items.filter((item) => deriveProtection(item) === 'unprotected').length,
+    protected: items.filter((item) => deriveProtection(item, now) === 'protected').length,
+    attention: items.filter((item) => deriveProtection(item, now) === 'attention').length,
+    unprotected: items.filter((item) => deriveProtection(item, now) === 'unprotected').length,
     missingReceipts: items.filter((item) => !item.hasReceipt).length,
     missingWarrantyInfo: items.filter((item) => !item.hasWarrantyInfo).length,
-    valueProtected: protectedValue(items),
+    valueProtected: items.filter((item) => deriveProtection(item, now) === 'protected').reduce((total, item) => total + (item.price ?? 0), 0),
   };
 }
 
