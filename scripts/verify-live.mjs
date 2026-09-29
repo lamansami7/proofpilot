@@ -3,6 +3,8 @@
 import { createClient } from '@supabase/supabase-js';
 import assert from 'node:assert/strict';
 import { stagingConfigured } from './release-config.mjs';
+import { loadLocalEnv } from './load-local-env.mjs';
+loadLocalEnv();
 const env=process.env;
 if (!stagingConfigured(env)) {
  console.error('Not run: explicitly identify PROOFPILOT_STAGING_PROJECT_REF, matching public Supabase URL/key, staging opt-in and two dedicated test accounts.');process.exit(2);

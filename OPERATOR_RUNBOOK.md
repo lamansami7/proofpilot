@@ -4,7 +4,7 @@ No live services were deployed during this work. Do not use production/customer 
 
 ## 1. Local reproducible checks
 
-Node 22+; Deno 2 for Edge checks; supported Chromium for Playwright.
+Node 22+; Deno 2 for Edge checks; supported Chromium for Playwright. The release gate and live-check scripts safely load an optional ignored `.env.local` using Node's dotenv parser; process/CI variables take precedence. Use dedicated staging credentials only, and never commit or share the file.
 
 ```sh
 npm ci
@@ -46,7 +46,7 @@ Configure verified SMTP sender/domain, SPF/DKIM/DMARC, delivery/bounce monitorin
 
 `EXPO_PUBLIC_AUTH_REDIRECT_URL` must name the same HTTPS origin you add to the Supabase Auth redirect allowlist (for production, `https://get-proofpilot.lovable.app`). `npm run check:release` rejects it unless it is public HTTPS with no credentials, query string or fragment, and never accepts localhost. If the two lists disagree, confirmation and password-recovery links return the user to a page Supabase will not accept. The "Resend confirmation email" action on the sign-up screen re-sends a signup confirmation and always answers with the same neutral wording, so it never reveals whether an address has an account.
 
-Create two distinct email-confirmed dedicated QA users. Set securely:
+Create two distinct email-confirmed dedicated QA users. Set these only for the dedicated staging project, either in your secure shell/CI environment or in the ignored local `.env.local` file (`npm run test:live` loads that file with Node's dotenv parser). Never use production/customer accounts or commit the file:
 
 - EXPO_PUBLIC_SUPABASE_URL; EXPO_PUBLIC_SUPABASE_ANON_KEY (public client key only)
 - PROOFPILOT_TEST_EMAIL_A; PROOFPILOT_TEST_PASSWORD_A

@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { publicHttps, publicSupportEmail, publicClientKey, validAiEndpoint, validSupabaseUrl, releaseFailures, stagingConfigured } from './release-config.mjs';
 test('empty release config fails closed without printing values',()=>{
  const failures=releaseFailures({},{});assert.ok(failures.length>=9);
@@ -108,4 +112,22 @@ test('release config rejects placeholder project ownership and invalid shipping 
   assert.ok(releaseFailures({ ...app, version: '0.0.0' }, env).some(message => message.includes('version')));
   assert.ok(releaseFailures({ ...app, version: 'v1.0' }, env).some(message => message.includes('version')));
   assert.ok(releaseFailures({ ...app, android: { ...app.android, versionCode: 2_100_000_001 } }, env).some(message => message.includes('build identifiers')));
+});
+
+test('live verification safely loads optional ignored .env.local values without overriding process env', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'proofpilot-env-test-'));
+  try {
+    const file = join(dir, '.env.local');
+    const fromFile = 'PROOFPILOT_FIXTURE_FROM_LOCAL_FILE';
+    const existing = 'PROOFPILOT_FIXTURE_FROM_PROCESS';
+    await writeFile(file, `${fromFile}=local-value\n${existing}=file-value\n`, { mode: 0o600 });
+    const childEnv = { ...process.env, [existing]: 'process-value' };
+    delete childEnv[fromFile];
+    const script = `import { loadLocalEnv } from ${JSON.stringify(new URL('./load-local-env.mjs', import.meta.url).href)};\nconst loaded = loadLocalEnv(${JSON.stringify(file)});\nconsole.log(JSON.stringify({ loaded, fromFile: process.env[${JSON.stringify(fromFile)}], existing: process.env[${JSON.stringify(existing)}] }));`;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], { env: childEnv, encoding: 'utf8' });
+    assert.equal(child.status, 0, child.stderr);
+    assert.deepEqual(JSON.parse(child.stdout), { loaded: true, fromFile: 'local-value', existing: 'process-value' });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
