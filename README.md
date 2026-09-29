@@ -19,11 +19,23 @@ npm run lint
 npm test -- --runInBand
 npm run test:offline
 npm run test:migrations
+npm run test:client-secrets
+npm run test:staging-config
 ./node_modules/.bin/tsc --noEmit
 ./node_modules/.bin/tsc --noEmit --noUnusedLocals --noUnusedParameters
 npm run build:web
+npm run check:secrets
 npm run preview
 ```
+
+`npm run check:secrets` scans the exported client bundle for privileged Supabase keys, provider
+secrets and private key material. It fails closed when no build exists and reports only the rule and
+file it matched, never the matched value.
+
+Before the destructive staging test, `npm run check:staging` verifies the staging window offline:
+it names any missing or unsafe variable (project reference, URL, public key, opt-in, two distinct
+test accounts) and refuses if a populated `.env.local` is not ignored by git. It never prints a
+value, so its output is safe to share.
 
 The preview serves `dist/` on `0.0.0.0:8080`. Development commands for native platforms: `npm run android`, `npm run ios`. These are **not signed release builds**.
 
@@ -74,6 +86,7 @@ On a fresh Supabase project apply these migrations in filename order:
 2. `202609250001_atomic_purchase_records.sql`
 3. `202609260001_deletion_integrity.sql`
 4. `202609260002_service_controls.sql`
+5. `202609260003_authenticated_table_grants.sql`
 
 On an existing baseline project apply only unapplied migrations using Supabase migration history. Back up first. The third migration disables legacy household reads for purchase records (there is no consent/sharing UI), adds permanent owner-readable tombstones, guards resurrection, and tightens document re-parenting. **Deploy the migration before the new client.** Without it synchronization fails visibly and retains queued work.
 

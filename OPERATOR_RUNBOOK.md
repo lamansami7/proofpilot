@@ -12,15 +12,22 @@ npm test -- --runInBand
 npm run test:migrations
 npm run test:tooling
 npm run test:release-config
+npm run test:client-secrets
+npm run test:staging-config
 npx tsc --noEmit --noUnusedLocals --noUnusedParameters
 npm run test:edge
 npm run check:edge
 npm run build:web
+npm run check:secrets
 npx playwright install chromium
 npm run test:e2e
 npm audit
 git diff --check
 ```
+
+`npm run check:secrets` is the only automatic check that a shipped client artifact contains no
+privileged key or provider secret. Run it against the exact build you intend to publish, after
+configuring the public `EXPO_PUBLIC_*` values, and confirm the report names no rule.
 
 `npm run preview` serves the export on 0.0.0.0:8080. Production hosting requires HTTPS, public shell assets/service-worker.js, SPA fallback to index.html, no caching of auth/API responses, and tested deep links. Service-worker cache contains static public assets only. Purge/version rollback and client update behavior need deployment testing.
 
@@ -40,7 +47,7 @@ supabase functions deploy delete-account
 supabase functions deploy proofpilot-ai
 ```
 
-All four migrations must be applied in filename order, ending with `202609260002_service_controls.sql`, BEFORE deploying this client. Hosted functions use their own Auth getUser checks; gateway legacy JWT verification is disabled in config for asymmetric key compatibility. Do not remove handler authentication. Supabase injects SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY server-side; never embed either privileged key in Expo. Configure ALLOWED_ORIGINS as comma-separated exact owned HTTPS origins, not `*`.
+All five migrations must be applied in filename order, ending with `202609260003_authenticated_table_grants.sql`, BEFORE deploying this client. Hosted functions use their own Auth getUser checks; gateway legacy JWT verification is disabled in config for asymmetric key compatibility. Do not remove handler authentication. Supabase injects SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY server-side; never embed either privileged key in Expo. Configure ALLOWED_ORIGINS as comma-separated exact owned HTTPS origins, not `*`.
 
 Configure verified SMTP sender/domain, SPF/DKIM/DMARC, delivery/bounce monitoring and email templates in Supabase. Configure Site URL to the owned HTTPS web origin and exact redirect allowlist entries for that origin and `proofpilot://auth/callback`. PKCE recovery must be initiated and opened on the same installed app/device. Test expired/reused/wrong-device links, email confirmation, reset, sign-out, restart and session refresh. Never use wildcard production redirect URLs.
 
@@ -55,10 +62,11 @@ Create two distinct email-confirmed dedicated QA users. Set these only for the d
 - PROOFPILOT_ALLOW_STAGING_TESTS=yes
 
 ```sh
+npm run check:staging   # names any missing/unsafe variable; prints no values
 npm run test:live
 ```
 
-This creates/deletes uniquely identified QA purchases and retains their tombstones. It tests isolation, idempotency and stale resurrection denial, not full multi-device or email verification.
+This creates/deletes uniquely identified QA purchases and retains their tombstones. It tests isolation, idempotency and stale resurrection denial, not full multi-device or email verification. If it fails, the report names the exact stage that failed and never echoes a token, email or record value — paste that line into a private note, not into a public issue.
 
 ### Manual live acceptance (record evidence)
 
@@ -126,11 +134,11 @@ AI responses now label supplied context as user-provided; the model cannot suppl
 3. Install a supported Supabase CLI using Supabase's installation instructions. Authenticate with `supabase login` privately, or inject SUPABASE_ACCESS_TOKEN via a secure process environment. Supply the project's database password through the CLI's private prompt when required. Never put those secrets in Expo variables, source, logs or chat. Verify the CLI link against the intended staging project before `migration list`, dry-run, push or function deployment. Do not run the earlier deployment commands until this check is complete.
 4. Choose the actual HTTPS staging app origin. In hosted Auth URL Configuration set Site URL to that origin and allow the exact origin plus `proofpilot://auth/callback` for installed native QA builds. Do not use wildcard redirects. Enable email/password authentication, email confirmation and minimum password length of at least eight. Configure your SMTP host/port, private username/password, verified sender and DNS records. Disable mail-provider link tracking if it rewrites Auth links. QA must be able to open real confirmation/recovery mail in the same browser/device that initiated PKCE.
 5. Create two separate QA-only users A/B with controlled inboxes; confirm them. Inject the four PROOFPILOT_TEST_EMAIL_A / PASSWORD_A / EMAIL_B / PASSWORD_B variables privately into the test process. Set PROOFPILOT_ALLOW_STAGING_TESTS=yes only after confirming the project. Use additional disposable users for account-deletion trials so A/B remain available for isolation tests; do not use your personal account. No extra deletion-user variable names are implemented yet.
-6. Deploy all four migrations in order using migration history, not dashboard SQL edits. The migrations create the **private** purchase-documents bucket: 20 MiB limit, PDF/JPEG/PNG only; object paths are `<authenticated-user-id>/<QA-file-name>`. Do not add public bucket access or permissive RLS policies. Existing app attachments remain device-local; testing this bucket directly does not establish cloud attachment backup. Upload/update restrictions must be tested with ordinary user sessions, not service-role access.
+6. Deploy all five migrations in order using migration history, not dashboard SQL edits. The migrations create the **private** purchase-documents bucket: 20 MiB limit, PDF/JPEG/PNG only; object paths are `<authenticated-user-id>/<QA-file-name>`. Do not add public bucket access or permissive RLS policies. Existing app attachments remain device-local; testing this bucket directly does not establish cloud attachment backup. Upload/update restrictions must be tested with ordinary user sessions, not service-role access.
 7. In staging Edge Function Secrets set ALLOWED_ORIGINS to the exact HTTPS staging app origin (comma-separated if multiple), and AI_ENABLED=false. Leave AI_MODEL/OPENAI_API_KEY unset and the public AI endpoint blank until a provider is deliberately configured. Hosted Supabase supplies SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY inside the functions; never copy the privileged key into the app. Deploy delete-account and proofpilot-ai to the explicitly linked staging project. Keep the repository's handler JWT verification: verify_jwt=false disables the legacy gateway check, not application authentication.
-8. Keep EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED=false for ordinary builds. Enable it only in the isolated staging QA build once the deletion function is deployed and the disposable-account destructive test is explicitly approved. Production remains disabled until acceptance. Do not set release approval variables merely to bypass the gate.
+8. Keep EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED=false for ordinary builds. Test the deletion endpoint directly with a disposable, recently password-authenticated QA account first; deployment alone is not sufficient. Enable the UI in an isolated staging QA build only after authenticated end-to-end deletion and failure/recovery behavior is evidenced; production remains disabled until acceptance. Do not set release approval variables merely to bypass the gate.
 
-The existing `npm run test:live` reads **process environment variables**; unlike Expo it does not automatically load .env files. Inject them with private tooling. No real values are required in tracked files. Non-secret project reference/URL/public key may be shared if needed, but do not send QA passwords, access tokens, database/SMTP passwords, service-role keys or provider secrets in chat.
+The existing `npm run test:live` reads **process environment variables** and also loads an optional ignored `.env.local` with Node's dotenv parser (process variables take precedence). Inject them with private tooling or the ignored file. No real values are required in tracked files. Non-secret project reference/URL/public key may be shared if needed, but do not send QA passwords, access tokens, database/SMTP passwords, service-role keys or provider secrets in chat.
 
 ### Live validation scope after setup
 
@@ -141,3 +149,39 @@ For the lost-confirmation test, seed a disposable user's records and owned Stora
 With AI disabled, a 503 ai_unavailable only verifies disabled behavior: it does not prove deployed authentication/quota paths ran. Provider-enabled tests require server-only credentials/budget approval and separately recorded authentication, limits, malformed/oversized output, failures and timeouts. Fault injection results must be labeled as such, not as organic provider behavior.
 
 Classification: **VERIFIED LIVE:** none. **VERIFIED LOCALLY:** source/configuration inspection and separately recorded local suites. **REQUIRES CONFIGURATION:** project, public settings, CLI access, QA users and staging origin. **REQUIRES EXTERNAL SERVICE:** SMTP/Auth/Storage/Edge/provider tests. **REQUIRES REAL DEVICE:** installed-app recovery and two-device lifecycle/conflicts. **REQUIRES HUMAN/LEGAL DECISION:** region/retention, destructive QA approval, private deletion support and provider data handling.
+
+## Hosted inspection and handoff (2026-09-29)
+
+Read-only, credential-free observations from the release-readiness pass recorded in
+[docs/reviews/RELEASE_READINESS_2026-09-29.md](docs/reviews/RELEASE_READINESS_2026-09-29.md).
+
+- `delete-account` and `proofpilot-ai` on project `kqepazkcunxfitjexjqc` both answer an unauthenticated
+  `GET` with this repository's `{"error":"method_not_allowed"}` contract, so both routes respond.
+  This does **not** establish control-plane ACTIVE status, migration parity, secrets, authenticated
+  behavior or the Auth allowlist; use the authenticated CLI to verify status.
+- The project gateway is up and rejects keyless requests; the public policy URL serves a policy page.
+- **Unresolved claim mismatch:** the public web pages advertise reminders ("30 / 7 / 1 day reminders"),
+  an AI assistant and household sharing. `README.md` records notifications as unavailable and
+  migration `202609260001` disables household reads because no sharing/consent UI exists. Correct the
+  public claims or implement the features before launch; do not treat the pages as product evidence.
+- **Unresolved web-auth origin:** `https://get-proofpilot.lovable.app/auth` states web sign-in is not
+  connected yet. Until the web client (with SPA fallback) is served on the origin you allow-list,
+  confirmation and recovery links cannot complete a PKCE exchange there. Point
+  `EXPO_PUBLIC_AUTH_REDIRECT_URL` and the Supabase redirect allowlist at the origin that actually
+  serves the client, and add `proofpilot://auth/callback` for installed native builds.
+
+Closed in that pass: the claim-type toggle now sets `aria-pressed`, so the seven browser cases that
+assert toggle state pass; `npm run check:secrets` and `npm run test:client-secrets` now guard client
+artifacts; five additional deletion-safeguard handler tests assert that unauthenticated, stale-proof,
+wrong-origin, non-JSON and target-injecting requests perform zero cloud work.
+
+Cautions for the operator's own environment:
+
+- Do not run `supabase config push` against the hosted project: `supabase/config.toml` describes local
+  development (`site_url = "http://localhost:8080"`) and would overwrite the hosted Site URL. Configure
+  hosted Auth URLs in the dashboard, or in a project-specific config that names the production origin.
+- Supabase CLI installs and runs from npm (`npx supabase`), but every hosted command needs
+  `supabase login` or `SUPABASE_ACCESS_TOKEN`, and `supabase link --project-ref <ref>` writes
+  `supabase/.temp/`, which must stay out of git (already ignored).
+- `npm run test:live` refuses to run without an explicit staging reference, a matching public key,
+  `PROOFPILOT_ALLOW_STAGING_TESTS=yes` and both QA credential pairs. It is not a production test.

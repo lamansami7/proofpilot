@@ -2,7 +2,7 @@
 
 Date: 2026-09-26. Branch: `arena/01a0dd28-proofpilot`. PR #9 remains draft and unmerged. This report supersedes the earlier hardening-increment audit. **NOT SAFE TO SHIP as a public cloud-enabled product.** No production service, SMTP, AI provider, signed store build or physical device was verified. Work is not represented as complete production transformation.
 
-> **Current local evidence:** The [latest release-hardening review](FINAL_RELEASE_HARDENING_REPORT.md) records the subsequent local fixes and two full 56-test browser runs. Native prebuild evidence below is historical; this pass reran all-platform exports, not prebuild or device testing. Hosted release blockers remain unchanged.
+> **Current local evidence:** The [2026-09-29 release-readiness review](reviews/RELEASE_READINESS_2026-09-29.md) records the latest pass: one accessibility defect fixed (claim-type toggle exposed no state), new deletion-safeguard and client-artifact secret checks, 430 unit tests, 56 browser tests twice consecutively, and read-only hosted inspection of the deployed functions and policy URL. The [earlier release-hardening review](FINAL_RELEASE_HARDENING_REPORT.md) records the preceding local fixes. Native prebuild evidence below is historical; this pass reran web export, not prebuild or device testing. Hosted release blockers remain unchanged.
 
 ## 1. Changes — FIXED
 

@@ -78,3 +78,37 @@ Deno.test('provider response reader rejects non-object JSON',async()=>{
  catch (error) { rejected=error instanceof HttpError && error.status===400; }
  assert(rejected);
 });
+
+// Deletion service: every rejection path must leave cloud state untouched, and
+// only the caller's own verified identity may ever be the deletion target.
+Deno.test('deletion requires a bearer token and performs no work without one',async()=>{
+ let calls=0;const handler=createDeletionHandler({allowedOrigins:[],now:()=>1000000,authenticate:async()=>identity,begin:async()=>{calls++;},removeFiles:async()=>{calls++;return true;},deleteUser:async()=>{calls++;}});
+ const missing=request('delete-account',{confirmation:'DELETE'});missing.headers.delete('authorization');
+ assert((await handler(missing)).status===401);
+ const malformed=request('delete-account',{confirmation:'DELETE'},{authorization:'Bearer not a token'});
+ assert((await handler(malformed)).status===401);
+ assert(calls===0);
+});
+Deno.test('deletion refuses a session with no recent password proof',async()=>{
+ let calls=0;const handler=createDeletionHandler({allowedOrigins:[],now:()=>1000000,authenticate:async()=>({id:identity.id,passwordVerifiedAt:null}),begin:async()=>{calls++;},removeFiles:async()=>{calls++;return true;},deleteUser:async()=>{calls++;}});
+ assert((await handler(request('delete-account',{confirmation:'DELETE'}))).status===403);
+ assert(calls===0);
+});
+Deno.test('deletion refuses an unlisted origin before any cloud work',async()=>{
+ let calls=0;const handler=createDeletionHandler({allowedOrigins:['https://app.test'],now:()=>1000000,authenticate:async()=>identity,begin:async()=>{calls++;},removeFiles:async()=>{calls++;return true;},deleteUser:async()=>{calls++;}});
+ assert((await handler(request('delete-account',{confirmation:'DELETE'},{origin:'https://evil.test'}))).status===403);
+ assert(calls===0);
+});
+Deno.test('deletion refuses a non-JSON body before any cloud work',async()=>{
+ let calls=0;const handler=createDeletionHandler({allowedOrigins:[],now:()=>1000000,authenticate:async()=>identity,begin:async()=>{calls++;},removeFiles:async()=>{calls++;return true;},deleteUser:async()=>{calls++;}});
+ assert((await handler(request('delete-account',{confirmation:'DELETE'},{'content-type':'text/plain'}))).status===415);
+ assert((await handler(request('delete-account',{confirmation:'delete'}))).status===400);
+ assert(calls===0);
+});
+Deno.test('deletion never signs out or deletes a different account than the verified caller',async()=>{
+ const targets:string[]=[];const handler=createDeletionHandler({allowedOrigins:[],now:()=>1000000,authenticate:async()=>({id:'verified-owner',passwordVerifiedAt:1000}),begin:async id=>{targets.push(id);},removeFiles:async id=>{targets.push(id);return true;},deleteUser:async id=>{targets.push(id);}});
+ assert((await handler(request('delete-account',{confirmation:'DELETE',userId:'victim',email:'victim@example.com'}))).status===400);
+ assert(targets.length===0);
+ assert((await handler(request('delete-account',{confirmation:'DELETE'}))).status===200);
+ assert(targets.every(target=>target==='verified-owner'));
+});
