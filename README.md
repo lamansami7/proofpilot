@@ -86,6 +86,7 @@ On a fresh Supabase project apply these migrations in filename order:
 2. `202609250001_atomic_purchase_records.sql`
 3. `202609260001_deletion_integrity.sql`
 4. `202609260002_service_controls.sql`
+5. `202609260003_authenticated_table_grants.sql`
 
 On an existing baseline project apply only unapplied migrations using Supabase migration history. Back up first. The third migration disables legacy household reads for purchase records (there is no consent/sharing UI), adds permanent owner-readable tombstones, guards resurrection, and tightens document re-parenting. **Deploy the migration before the new client.** Without it synchronization fails visibly and retains queued work.
 
