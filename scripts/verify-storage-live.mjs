@@ -33,6 +33,9 @@ try {
   const pathA = `${userA.id}/proofpilot-rls-probe.pdf`;
   const nestedA = `${userA.id}/nested/dir/proofpilot-rls-probe.pdf`;
 
+  stage = 'remove residue of an earlier interrupted run';
+  { const { error } = await bucket(a).remove([pathA, nestedA, `${userA.id}/proofpilot-probe.txt`, `${userA.id}/proofpilot-oversize.png`, `${userA.id}/evil.pdf`]); assert.ifError(error); pass(stage); }
+
   stage = 'owner uploads into own user-scoped prefix';
   { const { error } = await bucket(a).upload(pathA, PDF, { contentType: 'application/pdf' }); assert.ifError(error); pass(stage); }
 
@@ -68,7 +71,10 @@ try {
   { const { error } = await bucket(b).upload(pathA, PDF, { contentType: 'application/pdf', upsert: true }); assert.ok(error, 'foreign upsert must fail'); pass(stage); }
 
   stage = 'other authenticated user cannot delete foreign file';
-  { const { error } = await bucket(b).remove(pathA); assert.ok(error, 'foreign delete must fail'); pass(stage); }
+  { // Storage reports an RLS-denied delete either as an error or as a 200 that removed nothing; both are denial.
+    // The following stage proves the object really survived, so this can never pass vacuously.
+    const { data, error } = await bucket(b).remove([pathA]);
+    assert.ok(error || (Array.isArray(data) && data.length === 0), 'foreign delete must remove nothing'); pass(stage); }
 
   stage = 'foreign delete attempts leave the owner object intact';
   { const { data, error } = await bucket(a).list(userA.id); assert.ifError(error);
@@ -91,11 +97,15 @@ try {
     assert.ifError(listErr); assert.ok(entries?.some(entry => entry.name === 'proofpilot-rls-probe.pdf')); pass(stage); }
 
   stage = 'other authenticated user cannot delete foreign nested object';
-  { const { error } = await bucket(b).remove(nestedA); assert.ok(error, 'foreign nested delete must fail'); pass(stage); }
+  { const { data, error } = await bucket(b).remove([nestedA]);
+    assert.ok(error || (Array.isArray(data) && data.length === 0), 'foreign nested delete must remove nothing');
+    const { error: intact } = await bucket(a).download(nestedA); assert.ifError(intact); // the owner still reads it
+    pass(stage); }
 
   stage = 'owner deletes own files';
-  { const { error } = await bucket(a).remove([pathA, nestedA]); assert.ifError(error);
-    await bucket(a).remove(`${userA.id}/proofpilot-probe.txt`); // probe never uploaded; residue attempt only
+  { const { data, error } = await bucket(a).remove([pathA, nestedA]); assert.ifError(error);
+    assert.equal(data?.length, 2, 'the owner must be able to delete both probe objects');
+    await bucket(a).remove([`${userA.id}/proofpilot-probe.txt`]); // probe never uploaded; residue attempt only
     pass(stage); }
 
   stage = 'deleted storage objects remain deleted for their owner';
@@ -117,7 +127,7 @@ try {
 } finally {
   // Best-effort residue cleanup for partially completed runs; never touches accounts.
   try { const owner = (await a.auth.getUser()).data.user; if (owner?.id) {
-    for (const path of [`${owner.id}/proofpilot-rls-probe.pdf`, `${owner.id}/nested/dir/proofpilot-rls-probe.pdf`, `${owner.id}/proofpilot-probe.txt`, `${owner.id}/proofpilot-oversize.png`, `${owner.id}/evil.pdf`]) await bucket(a).remove(path);
+    await bucket(a).remove([`${owner.id}/proofpilot-rls-probe.pdf`, `${owner.id}/nested/dir/proofpilot-rls-probe.pdf`, `${owner.id}/proofpilot-probe.txt`, `${owner.id}/proofpilot-oversize.png`, `${owner.id}/evil.pdf`]);
   } } catch { /* residue is inert metadata the operator can re-run */ }
   try { await a.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
   try { await b.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }

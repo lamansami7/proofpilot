@@ -111,5 +111,13 @@ try {
   check(await count('purchases') === 0,'Account deletion cascades existing purchases');
   check(await count('purchase_tombstones') === 0,'Account deletion cascades tombstones');
   check(await count('account_deletion_receipts') === 1,'Deletion receipts survive account removal for lost-response verification');
+  // PostgREST verifies only a JWT's signature, so a deleted account's unexpired token still reaches the database.
+  // It must not be able to write or resurrect anything.
+  await asUser(a);
+  await denied(() => save('after-account-deletion'),'Deleted account cannot write through the RPC with a stale session');
+  await denied(() => db.query("insert into public.purchases(user_id,product_name) values ($1,'Resurrect attempt')",[a]),'Deleted account cannot insert purchases with a stale session');
+  await denied(() => db.query("insert into storage.objects(bucket_id,name) values ('purchase-documents',$1)",[`${a}/after-deletion.pdf`]),'Deleted account cannot upload files with a stale session');
+  await db.exec('reset role');
+  check(await count('purchases') === 0 && await count('purchase_tombstones') === 0,'Nothing reappears for a deleted account');
   console.log(`Migration checks: ${assertions} passed. Live Supabase Auth/Storage and concurrent connections still require integration testing.`);
 } finally { await db.close(); }

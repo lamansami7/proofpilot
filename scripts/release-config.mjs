@@ -66,6 +66,20 @@ export function publicClientKey(value) {
   } catch { return false; }
 }
 
+/**
+ * A privileged server key for operator-only evidence: a legacy JWT whose role claim is exactly
+ * `service_role` (what Supabase issues), or an opaque `sb_secret_...` key. Anon, publishable,
+ * authenticated and unknown roles are refused. Never logs or returns the value.
+ */
+export function serviceRoleKey(value) {
+  if (typeof value !== 'string') return false;
+  if (/^sb_secret_[A-Za-z0-9_-]{8,}$/.test(value)) return true;
+  try {
+    const parts = value.split('.');
+    return parts.length === 3 && JSON.parse(Buffer.from(parts[1], 'base64url').toString()).role === 'service_role';
+  } catch { return false; }
+}
+
 export function releaseFailures(app, env) {
   const failures = [];
   if (!validSupabaseUrl(env.EXPO_PUBLIC_SUPABASE_URL)) failures.push('Configure EXPO_PUBLIC_SUPABASE_URL as a standard HTTPS Supabase project origin');

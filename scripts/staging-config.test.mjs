@@ -17,7 +17,8 @@ const READY = {
   PROOFPILOT_TEST_EMAIL_B: 'qa-b@example.test',
   PROOFPILOT_TEST_PASSWORD_B: 'staging-password-b',
 };
-const SERVICE_JWT = `h.${Buffer.from(JSON.stringify({ role: 'service' })).toString('base64url')}.s`;
+// Real Supabase service-role JWTs carry role "service_role" (there is no role named "service").
+const SERVICE_JWT = `h.${Buffer.from(JSON.stringify({ iss: 'supabase', role: 'service_role' })).toString('base64url')}.s`;
 const DELETION_READY = {
   ...READY,
   PROOFPILOT_DELETE_TEST_EMAIL: 'qa-delete@example.test',
@@ -135,6 +136,14 @@ test('the deletion matrix environment is validated by name, with safety rails', 
 
   const wrongKey = assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_SERVICE_ROLE_KEY: `h.${Buffer.from(JSON.stringify({ role: 'anon' })).toString('base64url')}.s` });
   assert.ok(wrongKey.some(([name, detail]) => name === 'PROOFPILOT_SERVICE_ROLE_KEY' && detail.includes('service-role')));
+
+  const jwtWithRole = role => `h.${Buffer.from(JSON.stringify({ role })).toString('base64url')}.s`;
+  assert.deepEqual(assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_SERVICE_ROLE_KEY: 'sb_secret_AbCdEf123456_-xyz' }), [], 'opaque sb_secret_ keys are accepted');
+  for (const role of ['service', 'authenticated', 'supabase_admin']) {
+    assert.ok(assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_SERVICE_ROLE_KEY: jwtWithRole(role) }).some(([name]) => name === 'PROOFPILOT_SERVICE_ROLE_KEY'), `role "${role}" is not a service-role key`);
+  }
+  assert.ok(assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_SERVICE_ROLE_KEY: 'sb_publishable_AbCdEf123456' }).some(([name]) => name === 'PROOFPILOT_SERVICE_ROLE_KEY'), 'a publishable key is never a service key');
+  assert.ok(!JSON.stringify(assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_SERVICE_ROLE_KEY: jwtWithRole('anon') })).includes(jwtWithRole('anon')), 'key material must never be echoed');
 
   const garbageKey = assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_SERVICE_ROLE_KEY: 'not-a-jwt' });
   assert.ok(garbageKey.some(([name]) => name === 'PROOFPILOT_SERVICE_ROLE_KEY'));
