@@ -40,6 +40,12 @@ isolation subset), `npm run test:live:storage` (private-bucket RLS with normal u
 `npm run test:live:deletion` (destructive 19-item deletion matrix on a third disposable account —
 never QA A or QA B).
 
+Those scripts had never run end to end before being exercised against a local stand-in.
+`npm run test:live:sim` runs all three, unmodified, against a local simulation (real migration SQL, real
+Edge Function source, emulated Auth/Storage/PostgREST), `npm run test:live:sim:controls` injects faults to
+prove the matrix can fail, and `npm run test:live-scripts` holds offline contract tests. **These are not
+live evidence** and never replace the hosted staging run; see `OPERATOR_RUNBOOK.md`.
+
 The preview serves `dist/` on `0.0.0.0:8080`. Development commands for native platforms: `npm run android`, `npm run ios`. These are **not signed release builds**.
 
 Browser smoke tests (local-only export required):

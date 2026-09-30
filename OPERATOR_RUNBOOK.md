@@ -14,6 +14,7 @@ npm run test:tooling
 npm run test:release-config
 npm run test:client-secrets
 npm run test:staging-config
+npm run test:live-scripts          # offline contract tests for the live scripts (installed supabase-js, no network)
 npx tsc --noEmit --noUnusedLocals --noUnusedParameters
 npm run test:edge
 npm run check:edge
@@ -51,7 +52,7 @@ supabase functions deploy delete-account
 supabase functions deploy proofpilot-ai
 ```
 
-All **six** migrations must be applied in filename order, ending with `202609300001_deletion_receipts.sql`, BEFORE deploying this client. Apply the migration BEFORE deploying the `delete-account` function update: without the receipt table the updated function fails closed (deletion refuses to start) rather than running unreceipted. Hosted functions use their own Auth getUser checks; gateway legacy JWT verification is disabled in config for asymmetric key compatibility. Do not remove handler authentication. Supabase injects SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY server-side; never embed either privileged key in Expo. Configure ALLOWED_ORIGINS as comma-separated exact owned HTTPS origins, not `*`.
+All **six** migrations must be applied in filename order, ending with `202609300001_deletion_receipts.sql`, BEFORE deploying this client. Apply the migration BEFORE deploying the `delete-account` function update. Without the receipt table the updated function still fails closed in the sense that **nothing is destroyed** (a receipted request answers `503 deletion_incomplete_retry`), but it has already written the deletion-request row, so that account's cloud writes stay refused (\"Account deletion is in progress\") until a later deletion completes. Wrong order is recoverable (apply the migration, then the user retries) but user-visible; see \"Confirm which `delete-account` is deployed\" below to detect it. Hosted functions use their own Auth getUser checks; gateway legacy JWT verification is disabled in config for asymmetric key compatibility. Do not remove handler authentication. Supabase injects SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY server-side; never embed either privileged key in Expo. Configure ALLOWED_ORIGINS as comma-separated exact owned HTTPS origins, not `*`.
 
 Configure verified SMTP sender/domain, SPF/DKIM/DMARC, delivery/bounce monitoring and email templates in Supabase. Configure Site URL to the owned HTTPS web origin and exact redirect allowlist entries for that origin and `proofpilot://auth/callback`. PKCE recovery must be initiated and opened on the same installed app/device. Test expired/reused/wrong-device links, email confirmation, reset, sign-out, restart and session refresh. Never use wildcard production redirect URLs.
 
@@ -64,7 +65,7 @@ Create two distinct email-confirmed dedicated QA users. Set these only for the d
 - PROOFPILOT_TEST_EMAIL_B; PROOFPILOT_TEST_PASSWORD_B
 - PROOFPILOT_STAGING_PROJECT_REF (the exact 20-character reference of the dedicated staging project; URL must equal its canonical https://REF.supabase.co URL)
 - PROOFPILOT_ALLOW_STAGING_TESTS=yes
-- For the destructive deletion matrix only (`npm run test:live:deletion`): PROOFPILOT_DELETE_TEST_EMAIL and PROOFPILOT_DELETE_TEST_PASSWORD (the THIRD disposable account — never A, never B, never a personal account) plus PROOFPILOT_SERVICE_ROLE_KEY (the staging project's server key, used locally for privileged post-deletion evidence only; never an Expo variable, never printed, never committed)
+- For the destructive deletion matrix only (`npm run test:live:deletion`): PROOFPILOT_DELETE_TEST_EMAIL and PROOFPILOT_DELETE_TEST_PASSWORD (the THIRD disposable account — never A, never B, never a personal account) plus PROOFPILOT_SERVICE_ROLE_KEY (the staging project's server key, used locally for privileged post-deletion evidence only; never an Expo variable, never printed, never committed). Accepted formats: the legacy JWT whose `role` claim is `service_role`, or an opaque `sb_secret_...` key. An anon/publishable key or any other role is refused by `check:staging`. Optional: PROOFPILOT_DELETE_TEST_CONFIRM_RESET=yes, needed only if the third account already exists (see the safety rails below)
 
 ```sh
 npm run check:staging        # names any missing/unsafe variable; prints no values
@@ -73,13 +74,13 @@ npm run test:live:storage    # private-bucket RLS matrix with normal user sessio
 npm run test:live:deletion   # DESTRUCTIVE 19-item deletion matrix + lost-response receipt check
 ```
 
-`npm run test:live` creates/deletes uniquely identified QA purchases and retains their tombstones. It tests isolation, idempotency and stale resurrection denial, not full multi-device or email verification. `npm run test:live:storage` creates and removes only temporary probe objects owned by QA A; it never deletes accounts and uses no service-role access as RLS evidence. `npm run test:live:deletion` **destroys and recreates only the disposable account**; its code-level safety rails refuse to run if the disposable email matches QA A or QA B, and a final stage proves A and B still sign in afterwards. If any script fails, the report names the exact stage that failed and never echoes a token, email or record value — paste that line into a private note, not into a public issue.
+`npm run test:live` creates/deletes uniquely identified QA purchases and retains their tombstones. It tests isolation, idempotency and stale resurrection denial, not full multi-device or email verification. `npm run test:live:storage` creates and removes only temporary probe objects owned by QA A; it never deletes accounts and uses no service-role access as RLS evidence. `npm run test:live:deletion` **destroys and recreates only the disposable account**. Its code-level safety rails: it refuses to run if the disposable email matches QA A or QA B; it creates the disposable account with a marker in `user_metadata` and **refuses (exit 2) to delete an address that already exists without that marker** unless you set `PROOFPILOT_DELETE_TEST_CONFIRM_RESET=yes` (so a mistyped address can never destroy a real account; if you pre-created the third account in the dashboard, set the variable once, after confirming the address); it contains exactly one `deleteUser` call, guarded by those checks; and a final stage proves A and B are still the same accounts and still sign in. If any script fails, the report names the exact stage that failed and never echoes a token, email or record value — paste that line into a private note, not into a public issue.
 
 ### Manual live acceptance (record evidence)
 
 1. Two accounts cannot read/write each other's purchase/document/tombstone rows or Storage prefixes, including direct REST access.
 2. Two physical devices: edit offline, delete elsewhere, reconnect in both orders; deleted IDs must never resurrect. Test simultaneous edits (last server write wins), account switching during slow sync, pagination and interrupted retries.
-3. Deletion: run `npm run check:staging` then `npm run test:live:deletion`. The script automates recent-password enforcement, missing/stale password proof, forged target denial, wrong-account protection, deletion request creation, cloud-write freeze, partial Storage cleanup failure (deep-hierarchy injection), Storage retry, the >1,000-object cap, DB cascade removal, Auth-last ordering (auth must not disappear before Storage cleanup), deleted DB/Storage records staying deleted, no resurrection with the old session or refresh token, repeated-deletion refusal, idempotent receipt confirmation, lost-response recovery, and proof that QA A and B remain intact. It refuses to run without the third disposable account and a service-role evidence key, and it never targets A or B.
+3. Deletion: run `npm run check:staging` then `npm run test:live:deletion`. The script automates recent-password enforcement, missing/stale password proof, forged target denial, wrong-account protection, deletion request creation, cloud-write freeze, partial Storage cleanup failure (deep-hierarchy injection), Storage retry, the >1,000-object cap, DB cascade removal (rows are seeded before deletion so the check is not vacuous), Auth-last ordering (auth must not disappear before Storage cleanup), deleted DB/Storage records staying deleted, no resurrection with the old session or refresh token, repeated-deletion refusal, idempotent receipt confirmation, lost-response recovery, and proof that QA A and B remain intact. It refuses to run without the third disposable account and a service-role evidence key, and it never targets A or B.
 4. Interrupt the final deletion response and simulate failed local ledger/storage writes. The automated lost-response case is part of `npm run test:live:deletion` (receipt status confirms a discarded response; pending/unknown states stay blocked). For the manual client check: unconfirmed ledgers must keep blocking hydration/sync with no success UI; verify private-support identity checking and device cleanup. No customer launch until recovery is approved. Clear every participating device's offline cache after verified deletion; remote erasure of disconnected devices is not implemented.
 5. Real SMTP inbox/spam, redirect and native secure storage persistence across restart/expiry. Browser back, screen rotation, install/update and network transition tests.
 
@@ -140,7 +141,7 @@ AI responses now label supplied context as user-provided; the model cannot suppl
 2. Configure public `PROOFPILOT_STAGING_PROJECT_REF`, `EXPO_PUBLIC_SUPABASE_URL=https://<actual-reference>.supabase.co`, and `EXPO_PUBLIC_SUPABASE_ANON_KEY` (publishable or legacy anon key from that SAME project). Reference and URL must match exactly. The reference format is checked by the current script. A format check is not proof of ownership.
 3. Install a supported Supabase CLI using Supabase's installation instructions. Authenticate with `supabase login` privately, or inject SUPABASE_ACCESS_TOKEN via a secure process environment. Supply the project's database password through the CLI's private prompt when required. Never put those secrets in Expo variables, source, logs or chat. Verify the CLI link against the intended staging project before `migration list`, dry-run, push or function deployment. Do not run the earlier deployment commands until this check is complete.
 4. Choose the actual HTTPS staging app origin. In hosted Auth URL Configuration set Site URL to that origin and allow the exact origin plus `proofpilot://auth/callback` for installed native QA builds. Do not use wildcard redirects. Enable email/password authentication, email confirmation and minimum password length of at least eight. Configure your SMTP host/port, private username/password, verified sender and DNS records. Disable mail-provider link tracking if it rewrites Auth links. QA must be able to open real confirmation/recovery mail in the same browser/device that initiated PKCE.
-5. Create two separate QA-only users A/B with controlled inboxes; confirm them. Inject the four PROOFPILOT_TEST_EMAIL_A / PASSWORD_A / EMAIL_B / PASSWORD_B variables privately into the test process. Set PROOFPILOT_ALLOW_STAGING_TESTS=yes only after confirming the project. Use additional disposable users for account-deletion trials so A/B remain available for isolation tests; do not use your personal account. No extra deletion-user variable names are implemented yet.
+5. Create two separate QA-only users A/B with controlled inboxes; confirm them. Inject the four PROOFPILOT_TEST_EMAIL_A / PASSWORD_A / EMAIL_B / PASSWORD_B variables privately into the test process. Set PROOFPILOT_ALLOW_STAGING_TESTS=yes only after confirming the project. Use a third disposable user for account-deletion trials so A/B remain available for isolation tests; do not use your personal account. The variables for it are PROOFPILOT_DELETE_TEST_EMAIL, PROOFPILOT_DELETE_TEST_PASSWORD and PROOFPILOT_SERVICE_ROLE_KEY (see section 2).
 6. Deploy all six migrations in order using migration history, not dashboard SQL edits. The migrations create the **private** purchase-documents bucket: 20 MiB limit, PDF/JPEG/PNG only; object paths are `<authenticated-user-id>/<QA-file-name>`. Do not add public bucket access or permissive RLS policies. Existing app attachments remain device-local; testing this bucket directly does not establish cloud attachment backup. Upload/update restrictions must be tested with ordinary user sessions, not service-role access (`npm run test:live:storage` does exactly this).
 7. In staging Edge Function Secrets set ALLOWED_ORIGINS to the exact HTTPS staging app origin (comma-separated if multiple), and AI_ENABLED=false. Leave AI_MODEL/OPENAI_API_KEY unset and the public AI endpoint blank until a provider is deliberately configured. Hosted Supabase supplies SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY inside the functions; never copy the privileged key into the app. Deploy delete-account and proofpilot-ai to the explicitly linked staging project. Keep the repository's handler JWT verification: verify_jwt=false disables the legacy gateway check, not application authentication.
 8. Keep EXPO_PUBLIC_ACCOUNT_DELETION_ENABLED=false for ordinary builds. Test the deletion endpoint directly with a disposable, recently password-authenticated QA account first; deployment alone is not sufficient. Enable the UI in an isolated staging QA build only after authenticated end-to-end deletion and failure/recovery behavior is evidenced; production remains disabled until acceptance. Do not set release approval variables merely to bypass the gate.
@@ -195,6 +196,76 @@ Operator verification and support procedure:
 With AI disabled, a 503 ai_unavailable only verifies disabled behavior: it does not prove deployed authentication/quota paths ran. Provider-enabled tests require server-only credentials/budget approval and separately recorded authentication, limits, malformed/oversized output, failures and timeouts. Fault injection results must be labeled as such, not as organic provider behavior.
 
 Classification: **VERIFIED LIVE:** none. **VERIFIED LOCALLY:** source/configuration inspection and separately recorded local suites. **REQUIRES CONFIGURATION:** project, public settings, CLI access, QA users and staging origin. **REQUIRES EXTERNAL SERVICE:** SMTP/Auth/Storage/Edge/provider tests. **REQUIRES REAL DEVICE:** installed-app recovery and two-device lifecycle/conflicts. **REQUIRES HUMAN/LEGAL DECISION:** region/retention, destructive QA approval, private deletion support and provider data handling.
+
+### Confirm which `delete-account` is deployed (rollout step 4)
+
+After `supabase functions deploy delete-account`, prove the hosted function is the receipt-protocol
+implementation before running any live script. The probe is unauthenticated and read-only: it touches no
+account, and a random receipt that was never issued reveals nothing.
+
+```sh
+REF="$PROOFPILOT_STAGING_PROJECT_REF"
+RECEIPT="$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")"
+curl -sS -X POST "https://$REF.supabase.co/functions/v1/delete-account" \
+  -H 'content-type: application/json' -H "apikey: $EXPO_PUBLIC_SUPABASE_ANON_KEY" \
+  -d "{\"receipt\":\"$RECEIPT\"}" -w '\nHTTP %{http_code}\n'
+```
+
+| Answer | Meaning |
+| --- | --- |
+| `200 {"deleted":false,"state":"unknown"}` | new receipt-protocol function **and** the receipts table exists: proceed |
+| `503 {"error":"deletion_incomplete_retry"}` | new function deployed, but migration `202609300001` is **not** applied: apply it now (users who tried deleting meanwhile are frozen until they retry) |
+| `401 {"error":"sign_in_required"}` | the **old** pre-receipt function is still deployed: redeploy |
+
+A `GET` answers `405` on every version, so it cannot discriminate. These answers were produced by the real
+function sources (merged, merged without the migration, and the pre-receipt revision `05ec3ce`) under the
+local simulation below; they have **not** been observed on a hosted project. Cross-check with
+`supabase functions download delete-account` and a diff against `supabase/functions/` if in doubt.
+`npm run test:live:deletion` also refuses an old or unmigrated deployment at its 6th stage, before any
+destructive call.
+
+### Privileged evidence grants (Supabase default-grants change)
+
+Supabase is ending automatic Data API grants on new `public` tables: reported as effective for new projects
+from 2026-05-30 and, for tables created on existing projects, from 2026-10-30 (existing tables keep their
+grants; see github.com/orgs/supabase/discussions/45329 and confirm in your dashboard). What this means here:
+
+- The shipped migrations grant explicitly everything the **product** needs (`account_deletion_requests` and
+  `account_deletion_receipts` to `service_role`, `purchases` and the RPCs to `authenticated`), and the local
+  simulation in strict-grants mode confirms the function and user flows work with no default grants at all.
+- The destructive script's privileged **evidence** queries read `purchases`, `purchase_tombstones` and
+  `documents` as `service_role`, which no migration grants. On a project without default grants they fail
+  with `permission denied`. The script then prints `EVIDENCE BLOCKED: ...` and fails that stage; a denied
+  query is never read as "zero rows". Fix it on **staging only**, once, from the SQL editor:
+
+```sql
+grant select on public.purchases, public.purchase_tombstones, public.documents to service_role;
+```
+
+`service_role` already bypasses row-level security; this only adds the table privilege the evidence query
+needs. Do not add it to production.
+
+### Local simulation of the live scripts (NOT live evidence)
+
+The live scripts had never executed past their own configuration guard before the first simulated run, and
+that run found defects that would have failed the staging window. `npm run test:live:sim` therefore runs all
+three scripts unmodified against a local stand-in, and `npm run test:live:sim:controls` proves the matrix can
+fail (it injects one fault at a time and requires the matrix or the server-side audit to catch it).
+
+- **Real:** the six SQL migrations on PostgreSQL semantics (PGlite: RLS, triggers, cascades), the
+  unmodified `supabase/functions/delete-account` sources, and the pinned supabase-js 2.117.1 clients.
+- **Emulated:** GoTrue (sessions, admin API, magic links), the PostgREST request shapes these scripts use,
+  Storage (RLS-backed; listing order folders-first; an RLS-denied delete answers 200 with nothing removed),
+  and the Edge gateway. The emulation follows public documentation and can be wrong.
+- A pass means only that the scripts, the function source and the migrations agree with each other. It says
+  nothing about hosted Auth, Storage or Edge runtime behaviour, SMTP, rate limits, abort semantics or
+  eventual consistency. **Never record it as a live result.** `--fast-clock` skips the five-minute stale-proof
+  wait by advancing both sides' clocks together; omit it for a real-time run.
+
+Audit performed on every simulated run: QA A and B still exist and no admin delete ever named them; every
+admin delete named the disposable account; in every destructive function invocation the freeze request and the
+pending receipt precede any Storage removal or Auth deletion, Auth deletion follows the last Storage call, and
+a receipt is completed only after Auth deletion and never by an invocation that answered non-200.
 
 ## Hosted inspection and handoff (2026-09-29)
 

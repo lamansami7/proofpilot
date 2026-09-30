@@ -1,21 +1,25 @@
 // P1 destructive acceptance: the 19-item deletion matrix plus lost-response recovery,
 // run against the identified staging project with a THIRD disposable QA account.
 //
-// SAFETY RAILS (enforced in code, before any network call):
+// SAFETY RAILS (enforced in code, before any destructive call):
 //  - QA accounts A and B are NEVER deleted and their credentials are never used
 //    for any delete-account request; they only sign in for intactness checks.
-//  - The disposable account (PROOFPILOT_DELETE_TEST_EMAIL) is recreated fresh and
-//    destroyed at the end of the run. Its credentials live only in the environment.
+//  - The disposable account (PROOFPILOT_DELETE_TEST_EMAIL) is created by this script with a marker in its
+//    user_metadata and destroyed at the end of the run. An address that already exists WITHOUT the marker is
+//    refused (exit 2) unless the operator sets PROOFPILOT_DELETE_TEST_CONFIRM_RESET=yes, so a mistyped address
+//    can never delete a real account. Its credentials live only in the environment.
 //  - Output is fixed stage literals only: no token, email, URL, id or record content.
 //  - Privileged evidence (auth absence, storage emptiness, cascades) uses the operator's
-//    PROOFPILOT_SERVICE_ROLE_KEY locally; normal user sessions provide all RLS evidence.
+//    PROOFPILOT_SERVICE_ROLE_KEY locally; normal user sessions provide all RLS evidence. A privileged query that
+//    fails is a FAILURE, never read as "zero rows".
 import { createClient } from '@supabase/supabase-js';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { stagingConfigured } from './release-config.mjs';
+import { serviceRoleKey, stagingConfigured } from './release-config.mjs';
 import { assessDeletionEnv } from './check-staging-config.mjs';
 import { loadLocalEnv } from './load-local-env.mjs';
 import { liveFailureMessage } from './live-report.mjs';
+import { DISPOSABLE_MARKER, actionLinkOf, evidenceRows, findUserByEmail, isMarkedDisposable, purgeStoragePrefix } from './live-helpers.mjs';
 loadLocalEnv();
 const env = process.env;
 const missing = [];
@@ -35,6 +39,7 @@ const sameEmail = (x, y) => x.toLowerCase() === y.toLowerCase();
 const BUCKET = 'purchase-documents';
 const PDF = new TextEncoder().encode('%PDF-1.4\n% ProofPilot deletion probe\n');
 const MASS_COUNT = 1010; // must exceed the 1,000-object per-attempt cleanup cap
+const DEEP_PATH = uid => `${uid}/d1/d2/d3/d4/d5/d6/d7/d8/d9/deep.pdf`; // depth 9 trips the function's depth-8 guard
 const newReceipt = () => crypto.randomBytes(32).toString('base64url'); // 43 chars, client contract
 const make = () => createClient(URL_BASE, ANON, { auth: { persistSession: false, autoRefreshToken: false } });
 const admin = createClient(URL_BASE, env.PROOFPILOT_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -61,9 +66,60 @@ const assertStatus = (result, status, code) => {
   assert.equal(result.status, status, `expected HTTP ${status}`);
   if (code) assert.equal(result.payload?.error, code, `expected error code ${code}`);
 };
-const saveRecord = { id: `qa-delete-${crypto.randomUUID()}`, name: 'QA deletion freeze probe', price: 0, purchaseDate: '2026-01-01', documents: [], deadlines: [] };
-let uidC = null;
+const seedRecord = tag => ({ id: `qa-delete-${tag}-${crypto.randomUUID()}`, name: `QA deletion ${tag}`, price: 0, purchaseDate: '2026-01-01', documents: [], deadlines: [] });
+const saveRecord = seedRecord('freeze-probe');
+let uidA = null, uidB = null, uidC = null;
 let sessionToken = null, sessionRefresh = null;
+
+class Refusal extends Error {}
+const rowsFor = (table, column, id) => evidenceRows(admin.from(table).select(column).eq('user_id', id));
+const auth404 = async uid => {
+  const { data, error } = await admin.auth.admin.getUserById(uid);
+  assert.ok(!data?.user, 'auth user must be gone');
+  assert.ok(error && (error.status === 404 || error.code === 'user_not_found'), 'Auth must answer user-not-found, not an unrelated or transient error');
+};
+const authPresent = async (uid, message) => { const { data, error } = await admin.auth.admin.getUserById(uid); assert.ifError(error); assert.ok(data?.user, message); };
+const listRoot = async uid => { const { data, error } = await admin.storage.from(BUCKET).list(uid, { limit: 100 }); assert.ifError(error); return data ?? []; };
+/** Removes leftover residue of the disposable address: Storage first, then Auth. Refuses foreign accounts. */
+const removeLeftoverDisposable = async () => {
+  const existing = await findUserByEmail(admin, EMAIL_C);
+  if (!existing) return false;
+  assert.ok(!sameEmail(EMAIL_C, EMAIL_A) && !sameEmail(EMAIL_C, EMAIL_B), 'the disposable address must never be a QA account');
+  if (!isMarkedDisposable(existing) && env.PROOFPILOT_DELETE_TEST_CONFIRM_RESET !== 'yes') {
+    throw new Refusal('Not run: the disposable address already exists but was not created by this script. Set PROOFPILOT_DELETE_TEST_CONFIRM_RESET=yes only if that address really is the third, disposable QA account.');
+  }
+  await purgeStoragePrefix(admin.storage.from(BUCKET), existing.id);
+  const { error } = await admin.auth.admin.deleteUser(existing.id);
+  assert.ifError(error);
+  return true;
+};
+const createDisposable = async () => {
+  const { data, error } = await admin.auth.admin.createUser({ email: EMAIL_C, password: env.PROOFPILOT_DELETE_TEST_PASSWORD, email_confirm: true, user_metadata: { [DISPOSABLE_MARKER]: true } });
+  assert.ifError(error);
+  assert.ok(data?.user?.id);
+  assert.ok(data.user.id !== uidA && data.user.id !== uidB, 'the disposable account must be a distinct identity');
+  return data.user.id;
+};
+const signInDisposable = async () => {
+  const { data, error } = await c.auth.signInWithPassword({ email: EMAIL_C, password: env.PROOFPILOT_DELETE_TEST_PASSWORD });
+  assert.ifError(error);
+  sessionToken = data.session.access_token;
+  sessionRefresh = data.session.refresh_token;
+  assert.ok(sessionToken && sessionRefresh);
+};
+const seedDatabase = async (tag) => {
+  const { error: saveError } = await c.rpc('save_purchase_record', { record: seedRecord(tag) });
+  assert.ifError(saveError);
+  const { error: tombError } = await c.rpc('delete_purchase_record', { record_id: `qa-delete-tombstone-${crypto.randomUUID()}` });
+  assert.ifError(tombError);
+  assert.equal((await rowsFor('purchases', 'id', uidC)).length, 1, 'the seed purchase must exist before deletion');
+  assert.equal((await rowsFor('purchase_tombstones', 'record_id', uidC)).length, 1, 'the seed tombstone must exist before deletion');
+};
+const assertDatabaseEmpty = async () => {
+  for (const [table, column] of [['purchases', 'id'], ['purchase_tombstones', 'record_id'], ['documents', 'id'], ['account_deletion_requests', 'user_id']]) {
+    assert.equal((await rowsFor(table, column, uidC)).length, 0, `${table} rows must be gone`);
+  }
+};
 
 try {
   // ---- Safety rails (before any request) ----
@@ -73,45 +129,36 @@ try {
   pass(stage);
 
   stage = 'refuse destructive run without a service-role evidence key';
-  {
-    const payload = JSON.parse(Buffer.from(env.PROOFPILOT_SERVICE_ROLE_KEY.split('.')[1], 'base64url').toString());
-    assert.equal(payload.role, 'service', 'privileged evidence key must be a service-role JWT');
-    pass(stage);
-  }
+  assert.ok(serviceRoleKey(env.PROOFPILOT_SERVICE_ROLE_KEY), 'privileged evidence key must be a service-role key');
+  pass(stage);
 
   // ---- 1. Disposable account lifecycle ----
   stage = 'reset the disposable deletion account to a known state';
   {
-    const { data: existing } = await admin.auth.admin.getUserByEmail(EMAIL_C);
-    if (existing?.user) await admin.auth.admin.deleteUser(existing.user.id);
-    const { data: created, error } = await admin.auth.admin.createUser({ email: EMAIL_C, password: env.PROOFPILOT_DELETE_TEST_PASSWORD, email_confirm: true });
-    assert.ifError(error);
-    uidC = created.user.id;
+    const a = await findUserByEmail(admin, EMAIL_A), b = await findUserByEmail(admin, EMAIL_B);
+    assert.ok(a && b, 'QA accounts A and B must exist');
+    uidA = a.id; uidB = b.id;
+    await removeLeftoverDisposable();
+    uidC = await createDisposable();
     pass(stage);
   }
 
   stage = 'sign in disposable account with a fresh password proof';
-  {
-    const { data, error } = await c.auth.signInWithPassword({ email: EMAIL_C, password: env.PROOFPILOT_DELETE_TEST_PASSWORD });
-    assert.ifError(error);
-    sessionToken = data.session.access_token;
-    sessionRefresh = data.session.refresh_token;
-    assert.ok(sessionToken && sessionRefresh);
-    pass(stage);
-  }
+  await signInDisposable();
+  pass(stage);
   const firstProofAt = Date.now();
 
   // ---- 2. Non-destructive guard stages ----
   stage = 'missing password proof is refused without any cloud work';
   {
-    const { data: link, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email: EMAIL_C });
+    const { data: generated, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email: EMAIL_C });
     assert.ifError(error);
-    assert.ok(link?.action_link, 'magiclink action link required for the passwordless-session probe');
-    const verifyResponse = await fetch(link.action_link, { redirect: 'manual' });
+    const actionLink = actionLinkOf(generated);
+    assert.ok(actionLink, 'magiclink action link required for the passwordless-session probe');
+    const verifyResponse = await fetch(actionLink, { redirect: 'manual' });
     const location = verifyResponse.headers.get('location');
     assert.ok(location, 'verify step must redirect with a session fragment');
-    const fragment = new URL(location).hash.slice(1);
-    const params = new URLSearchParams(fragment);
+    const params = new URLSearchParams(new URL(location).hash.slice(1));
     const magicToken = params.get('access_token');
     assert.ok(magicToken, 'passwordless session token required');
     const claims = JSON.parse(Buffer.from(magicToken.split('.')[1], 'base64url').toString());
@@ -119,10 +166,8 @@ try {
     assert.ok(!(claims.amr ?? []).some(item => item.method === 'password'), 'fixture must contain no password proof');
     const result = await deleteRequest({ confirmation: 'DELETE' }, magicToken);
     assertStatus(result, 403, 'recent_password_required');
-    const { data: stillThere } = await admin.auth.admin.getUserById(uidC);
-    assert.ok(stillThere?.user, 'refused attempt must not delete auth');
-    const { data: freeze } = await admin.from('account_deletion_requests').select('user_id').eq('user_id', uidC);
-    assert.equal((freeze ?? []).length, 0, 'refused attempt must not create a deletion request');
+    await authPresent(uidC, 'refused attempt must not delete auth');
+    assert.equal((await rowsFor('account_deletion_requests', 'user_id', uidC)).length, 0, 'refused attempt must not create a deletion request');
     pass(stage);
   }
 
@@ -137,37 +182,42 @@ try {
 
   stage = 'forged deletion target fields are rejected without cloud work';
   {
-    const { data: userB } = await admin.auth.admin.getUserByEmail(EMAIL_B);
-    assert.ok(userB?.user, 'QA account B must exist for the wrong-account fixture');
-    const result = await deleteRequest({ confirmation: 'DELETE', userId: userB.user.id }, sessionToken);
-    assertStatus(result, 400, 'confirmation_required');
-    const { data: freeze } = await admin.from('account_deletion_requests').select('user_id').eq('user_id', uidC);
-    assert.equal((freeze ?? []).length, 0, 'forged request must not freeze the caller');
+    for (const key of ['userId', 'user_id', 'id', 'target', 'account', 'email']) {
+      const result = await deleteRequest({ confirmation: 'DELETE', [key]: key === 'email' ? EMAIL_B : uidB }, sessionToken);
+      assertStatus(result, 400, 'confirmation_required');
+    }
+    assert.equal((await rowsFor('account_deletion_requests', 'user_id', uidC)).length, 0, 'forged request must not freeze the caller');
+    assert.equal((await rowsFor('account_deletion_requests', 'user_id', uidB)).length, 0, 'forged request must not freeze the named account');
+    await authPresent(uidB, 'forged request must not delete the named account');
     pass(stage);
   }
 
   stage = 'wrong-account attempts leave QA accounts A and B intact';
   {
-    for (const [email, password, label] of [[EMAIL_A, env.PROOFPILOT_TEST_PASSWORD_A, 'A'], [EMAIL_B, env.PROOFPILOT_TEST_PASSWORD_B, 'B']]) {
+    for (const [email, password, label, uid] of [[EMAIL_A, env.PROOFPILOT_TEST_PASSWORD_A, 'A', uidA], [EMAIL_B, env.PROOFPILOT_TEST_PASSWORD_B, 'B', uidB]]) {
       const probe = make();
       const { data, error } = await probe.auth.signInWithPassword({ email, password });
       assert.ifError(error);
-      assert.equal(data.user?.email?.toLowerCase(), email.toLowerCase(), `QA ${label} must still be sign-in-able`);
+      assert.equal(data.user?.id, uid, `QA ${label} must still be the same account`);
       await probe.auth.signOut({ scope: 'local' });
     }
     pass(stage);
   }
 
-  // ---- 3. Storage fixtures (normal authenticated user) ----
+  // ---- 3. Storage and database fixtures (normal authenticated user) ----
   stage = 'upload flat and nested storage fixtures as the disposable user';
   {
     const bucket = c.storage.from(BUCKET);
-    for (const path of [`${uidC}/probe.pdf`, `${uidC}/nested/dir/probe.pdf`, `${uidC}/d1/d2/d3/d4/d5/d6/d7/d8/d9/deep.pdf`]) {
+    for (const path of [`${uidC}/probe.pdf`, `${uidC}/nested/dir/probe.pdf`, DEEP_PATH(uidC)]) {
       const { error } = await bucket.upload(path, PDF, { contentType: 'application/pdf' });
       assert.ifError(error);
     }
     pass(stage);
   }
+
+  stage = 'seed purchase and tombstone rows that the deletion must cascade away';
+  await seedDatabase('seed');
+  pass(stage);
 
   stage = 'upload more than 1,000 storage objects as the disposable user';
   {
@@ -192,10 +242,8 @@ try {
     await sleep(remaining);
     const result = await deleteRequest({ confirmation: 'DELETE' }, sessionToken);
     assertStatus(result, 403, 'recent_password_required');
-    const { data: stillThere } = await admin.auth.admin.getUserById(uidC);
-    assert.ok(stillThere?.user, 'stale-proof refusal must not delete auth');
-    const { data: freeze } = await admin.from('account_deletion_requests').select('user_id').eq('user_id', uidC);
-    assert.equal((freeze ?? []).length, 0, 'stale-proof refusal must not create a deletion request');
+    await authPresent(uidC, 'stale-proof refusal must not delete auth');
+    assert.equal((await rowsFor('account_deletion_requests', 'user_id', uidC)).length, 0, 'stale-proof refusal must not create a deletion request');
     pass(stage);
   }
 
@@ -203,10 +251,7 @@ try {
   stage = 'deletion with a broken storage hierarchy fails without reporting success';
   const receipt1 = newReceipt();
   {
-    const { data, error } = await c.auth.signInWithPassword({ email: EMAIL_C, password: env.PROOFPILOT_DELETE_TEST_PASSWORD });
-    assert.ifError(error);
-    sessionToken = data.session.access_token;
-    sessionRefresh = data.session.refresh_token;
+    await signInDisposable();
     const result = await deleteRequest({ confirmation: 'DELETE', receipt: receipt1 }, sessionToken);
     assert.equal(result.status, 503, 'deep hierarchy must fail cleanup');
     assert.notEqual(result.payload?.deleted, true, 'failure must never report successful deletion');
@@ -214,18 +259,13 @@ try {
   }
 
   stage = 'failed attempt created the durable deletion request';
-  {
-    const { data } = await admin.from('account_deletion_requests').select('user_id').eq('user_id', uidC);
-    assert.equal((data ?? []).length, 1, 'deletion request row must exist after begin');
-    pass(stage);
-  }
+  assert.equal((await rowsFor('account_deletion_requests', 'user_id', uidC)).length, 1, 'deletion request row must exist after begin');
+  pass(stage);
 
   stage = 'auth survives failed storage cleanup';
   {
-    const { data: stillThere } = await admin.auth.admin.getUserById(uidC);
-    assert.ok(stillThere?.user, 'auth must not disappear before cleanup succeeds');
-    const { data: files } = await admin.storage.from(BUCKET).list(uidC, { limit: 5 });
-    assert.ok((files ?? []).length > 0, 'storage fixtures must still exist');
+    await authPresent(uidC, 'auth must not disappear before cleanup succeeds');
+    assert.ok((await listRoot(uidC)).length > 0, 'storage fixtures must still exist');
     pass(stage);
   }
 
@@ -233,8 +273,12 @@ try {
   {
     const { error: saveError } = await c.rpc('save_purchase_record', { record: saveRecord });
     assert.ok(saveError, 'database writes must be frozen');
+    assert.match(String(saveError.message), /Account deletion is in progress/i, 'database writes must be refused by the closing-account guard');
     const { error: uploadError } = await c.storage.from(BUCKET).upload(`${uidC}/during-freeze.pdf`, PDF, { contentType: 'application/pdf' });
     assert.ok(uploadError, 'storage uploads must be frozen');
+    // Nothing slipped through either channel.
+    assert.equal((await rowsFor('purchases', 'id', uidC)).length, 1, 'only the seeded purchase may exist');
+    assert.ok(!(await listRoot(uidC)).some(entry => entry.name === 'during-freeze.pdf'), 'no object may be created during the freeze');
     pass(stage);
   }
 
@@ -249,34 +293,27 @@ try {
 
   stage = 'owner removes the blocking deep object to exercise storage retry';
   {
-    const { error } = await c.storage.from(BUCKET).remove(`${uidC}/d1/d2/d3/d4/d5/d6/d7/d8/d9/deep.pdf`);
+    const { data, error } = await c.storage.from(BUCKET).remove([DEEP_PATH(uidC)]);
     assert.ifError(error);
+    assert.equal(data?.length, 1, 'the owner must be able to delete their own object');
     pass(stage);
   }
 
   stage = 'retry with more than 1,000 objects pauses cleanup and keeps auth';
   const receipt2 = newReceipt();
   {
-    const { data, error } = await c.auth.signInWithPassword({ email: EMAIL_C, password: env.PROOFPILOT_DELETE_TEST_PASSWORD });
-    assert.ifError(error);
-    sessionToken = data.session.access_token;
-    sessionRefresh = data.session.refresh_token;
+    await signInDisposable();
     const result = await deleteRequest({ confirmation: 'DELETE', receipt: receipt2 }, sessionToken);
     assertStatus(result, 409, 'cleanup_pending_retry');
     assert.notEqual(result.payload?.deleted, true);
-    const { data: stillThere } = await admin.auth.admin.getUserById(uidC);
-    assert.ok(stillThere?.user, 'auth must survive the cleanup cap');
-    const { data: remaining } = await admin.storage.from(BUCKET).list(uidC, { limit: 5 });
-    assert.ok((remaining ?? []).length > 0, 'objects must remain for the retry');
+    await authPresent(uidC, 'auth must survive the cleanup cap');
+    assert.ok((await listRoot(uidC)).length > 0, 'objects must remain for the retry');
     pass(stage);
   }
 
   stage = 'final retry completes deletion after cleanup finishes';
   {
-    const { data, error } = await c.auth.signInWithPassword({ email: EMAIL_C, password: env.PROOFPILOT_DELETE_TEST_PASSWORD });
-    assert.ifError(error);
-    sessionToken = data.session.access_token;
-    sessionRefresh = data.session.refresh_token;
+    await signInDisposable();
     const result = await deleteRequest({ confirmation: 'DELETE', receipt: receipt2 }, sessionToken);
     assert.equal(result.status, 200, 'final retry must succeed');
     assert.equal(result.payload?.deleted, true);
@@ -284,11 +321,8 @@ try {
   }
 
   stage = 'auth user is deleted only after cleanup completed';
-  {
-    const { data, error } = await admin.auth.admin.getUserById(uidC);
-    assert.ok(error || !data?.user, 'auth user must be gone');
-    pass(stage);
-  }
+  await auth404(uidC);
+  pass(stage);
 
   stage = 'storage objects are fully removed';
   {
@@ -299,13 +333,8 @@ try {
   }
 
   stage = 'database records are cascade-removed';
-  {
-    const { data: purchases } = await admin.from('purchases').select('id').eq('user_id', uidC);
-    const { data: documents } = await admin.from('documents').select('id').eq('user_id', uidC);
-    assert.equal((purchases ?? []).length, 0, 'purchase rows must be gone');
-    assert.equal((documents ?? []).length, 0, 'document rows must be gone');
-    pass(stage);
-  }
+  await assertDatabaseEmpty();
+  pass(stage);
 
   stage = 'completed receipt confirms repeatedly and idempotently';
   {
@@ -342,38 +371,36 @@ try {
       headers: { 'Content-Type': 'application/json', apikey: ANON },
       body: JSON.stringify({ refresh_token: sessionRefresh, grant_type: 'refresh_token' }),
     });
-    assert.ok(response.status >= 400, 'refresh after deletion must fail');
+    assert.ok(response.status >= 400 && response.status < 500, 'refresh after deletion must be refused by Auth');
+    let body = null;
+    try { body = await response.json(); } catch { body = null; }
+    assert.ok(!body?.access_token, 'refresh after deletion must not mint a session');
     pass(stage);
   }
 
   stage = 'deleted purchases remain deleted after write attempts';
   {
-    const { data: purchases } = await admin.from('purchases').select('id').eq('user_id', uidC);
-    assert.equal((purchases ?? []).length, 0, 'no rows may reappear');
+    await assertDatabaseEmpty();
+    await auth404(uidC);
     pass(stage);
   }
 
   stage = 'repeated deletion attempt cannot run without a session';
   {
     const result = await deleteRequest({ confirmation: 'DELETE' }, sessionToken);
-    assert.equal(result.status, 401, 'deleted account cannot authenticate for another deletion');
+    assertStatus(result, 401, 'invalid_session');
     pass(stage);
   }
 
   // ---- 5. Lost-final-response recovery (receipt protocol) ----
   stage = 'recreate the disposable account for lost-response verification';
   {
-    const { data: existing } = await admin.auth.admin.getUserByEmail(EMAIL_C);
-    if (existing?.user) await admin.auth.admin.deleteUser(existing.user.id);
-    const { data: created, error } = await admin.auth.admin.createUser({ email: EMAIL_C, password: env.PROOFPILOT_DELETE_TEST_PASSWORD, email_confirm: true });
-    assert.ifError(error);
-    uidC = created.user.id;
-    const { data: signedIn, error: signInError } = await c.auth.signInWithPassword({ email: EMAIL_C, password: env.PROOFPILOT_DELETE_TEST_PASSWORD });
-    assert.ifError(signInError);
-    sessionToken = signedIn.session.access_token;
-    sessionRefresh = signedIn.session.refresh_token;
+    await removeLeftoverDisposable();
+    uidC = await createDisposable();
+    await signInDisposable();
     const { error: uploadError } = await c.storage.from(BUCKET).upload(`${uidC}/probe.pdf`, PDF, { contentType: 'application/pdf' });
     assert.ifError(uploadError);
+    await seedDatabase('lost-response');
     pass(stage);
   }
 
@@ -396,12 +423,11 @@ try {
 
   stage = 'server state matches the receipt after a lost response';
   {
-    const { data: user } = await admin.auth.admin.getUserByEmail(EMAIL_C);
-    assert.ok(!user?.user, 'auth must be gone');
-    const { data: files } = await admin.storage.from(BUCKET).list(uidC, { limit: 5 });
+    await auth404(uidC);
+    const { data: files, error: listError } = await admin.storage.from(BUCKET).list(uidC, { limit: 5 });
+    assert.ifError(listError);
     assert.equal((files ?? []).length, 0, 'storage must be gone');
-    const { data: purchases } = await admin.from('purchases').select('id').eq('user_id', uidC);
-    assert.equal((purchases ?? []).length, 0, 'database rows must be gone');
+    await assertDatabaseEmpty();
     const body = await receiptStatus(receipt3);
     assert.equal(body?.state, 'completed', 'status stays idempotent after verification');
     pass(stage);
@@ -409,25 +435,23 @@ try {
 
   stage = 'QA accounts A and B remain intact at the end of the run';
   {
-    for (const [email, password, label] of [[EMAIL_A, env.PROOFPILOT_TEST_PASSWORD_A, 'A'], [EMAIL_B, env.PROOFPILOT_TEST_PASSWORD_B, 'B']]) {
+    for (const [email, password, label, uid] of [[EMAIL_A, env.PROOFPILOT_TEST_PASSWORD_A, 'A', uidA], [EMAIL_B, env.PROOFPILOT_TEST_PASSWORD_B, 'B', uidB]]) {
+      await authPresent(uid, `QA ${label} must survive the destructive run`);
       const probe = make();
       const { data, error } = await probe.auth.signInWithPassword({ email, password });
       assert.ifError(error);
-      assert.equal(data.user?.email?.toLowerCase(), email.toLowerCase(), `QA ${label} must survive the destructive run`);
+      assert.equal(data.user?.id, uid, `QA ${label} must still be the same account`);
       await probe.auth.signOut({ scope: 'local' });
     }
     pass(stage);
   }
 
-  console.log(`Deletion matrix checks passed: ${passed} stages — recent/missing/stale proof, forged target, wrong-account, request creation, freeze, partial failure, retry, >1,000 objects, Auth-last ordering, cascades, persistence, no resurrection, idempotent receipt, lost-response recovery, QA A/B intact. Not an SMTP/device/full release certification.`);
+  console.log(`Deletion matrix checks passed: ${passed} stages — recent/missing/stale proof, forged target, wrong-account, request creation, freeze, partial failure, retry, >1,000 objects, Auth-last ordering, seeded cascades, persistence, no resurrection, idempotent receipt, lost-response recovery, QA A/B intact. Not an SMTP/device/full release certification.`);
 } catch (error) {
-  console.error(liveFailureMessage(stage, error));
-  process.exitCode = 1;
+  if (error instanceof Refusal) { console.error(error.message); process.exitCode = 2; }
+  else { console.error(liveFailureMessage(stage, error)); process.exitCode = 1; }
 } finally {
   // Leave no disposable residue: the disposable account (only) is removed if still present.
-  try {
-    const { data: leftover } = await admin.auth.admin.getUserByEmail(EMAIL_C);
-    if (leftover?.user && !sameEmail(EMAIL_C, EMAIL_A) && !sameEmail(EMAIL_C, EMAIL_B)) await admin.auth.admin.deleteUser(leftover.user.id);
-  } catch { /* best effort; the account is disposable and re-reset at the start */ }
+  try { await removeLeftoverDisposable(); } catch { /* best effort; the account is disposable and re-reset at the start */ }
   try { await c.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
 }

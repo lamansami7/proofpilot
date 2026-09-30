@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { publicClientKey, stagingConfigured } from './release-config.mjs';
+import { publicClientKey, serviceRoleKey, stagingConfigured } from './release-config.mjs';
 import { loadLocalEnv } from './load-local-env.mjs';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -30,11 +30,7 @@ export function assessDeletionEnv(env) {
   }
   const serviceKey = env.PROOFPILOT_SERVICE_ROLE_KEY;
   if (!present(serviceKey)) problems.push(['PROOFPILOT_SERVICE_ROLE_KEY', 'missing (operator-only server key for privileged post-deletion evidence)']);
-  else {
-    let role = null;
-    try { role = JSON.parse(Buffer.from(serviceKey.split('.')[1], 'base64url').toString()).role; } catch { role = null; }
-    if (role !== 'service') problems.push(['PROOFPILOT_SERVICE_ROLE_KEY', 'not a service-role key (never substitute an anon or publishable key)']);
-  }
+  else if (!serviceRoleKey(serviceKey)) problems.push(['PROOFPILOT_SERVICE_ROLE_KEY', 'not a service-role key (a legacy JWT whose role is "service_role", or an sb_secret_ key; never substitute an anon or publishable key)']);
   return problems;
 }
 
