@@ -20,6 +20,8 @@
     "test:live": "node scripts/verify-live.mjs",
     "test:live:storage": "node scripts/verify-storage-live.mjs",
     "test:live:deletion": "node scripts/verify-deletion-live.mjs",
+    "test:live:sim": "node --experimental-transform-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/sim/run-live-simulation.mjs --fast-clock",
+    "test:live:sim:controls": "node --experimental-transform-types --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/sim/run-negative-controls.mjs",
     "check:release": "node scripts/check-release.mjs",
     "check:secrets": "node scripts/scan-client-secrets.mjs",
     "check:staging": "node scripts/check-staging-config.mjs",
@@ -27,6 +29,7 @@
     "test:release-config": "node --test scripts/release-config.test.mjs",
     "test:client-secrets": "node --test scripts/client-secret-scan.test.mjs",
     "test:staging-config": "node --test scripts/staging-config.test.mjs",
+    "test:live-scripts": "node --test scripts/live-scripts.test.mjs",
     "test:offline": "node --test scripts/offline-shell.test.mjs",
     "lint": "eslint ."
   },
