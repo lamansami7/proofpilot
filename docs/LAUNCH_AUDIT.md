@@ -137,3 +137,67 @@ Lost-response review confirms the architecture limitation: a server success with
 No application/migration/function code changed in this phase. PR #9 remains draft/unmerged; no store submission or production-readiness claim is authorized.
 
 Local regression rerun for this staging-boundary handoff: **260 unit tests / 21 suites, 26 migration assertions, 18 backend/HTTP tests, 9 configuration tests, 5 tooling checks and 24 browser workflows passed**. Strict TypeScript, both Edge entrypoint checks, production web/offline export and Android/iOS bundle exports passed. `npm audit` reported zero vulnerabilities; `git diff --check` passed. Targeted current tracked-source scanning found no matching private-key/provider/GitHub-secret patterns and zero tracked populated environment files; this is not a historical secret audit. None of these results is VERIFIED LIVE.
+
+
+## Continuation pass — 2026-09-30 (branch `arena/01a0f221-proofpilot`)
+
+**Status unchanged: NOT SAFE TO SHIP.** No approval variable was set; the deletion switch stays
+`false`; `npm run check:release` remains BLOCKED (exit 1, 9 named blockers). Full evidence is in
+[docs/reviews/RELEASE_CONTINUATION_2026-09-30.md](reviews/RELEASE_CONTINUATION_2026-09-30.md).
+
+### FIXED in this pass
+
+- **Lost-final-response recovery (previous launch blocker) now has a code-level solution: the
+  server receipt protocol.** Migration `202609300001_deletion_receipts.sql` adds a service-role-only
+  hash table; the `delete-account` function records a pending receipt before destructive work and
+  `completed_at` only after Auth deletion, and answers an unauthenticated, receipt-keyed status
+  probe (unknown receipts reveal nothing — no existence oracle). The client stores a 256-bit
+  receipt in its durable ledger and confirms deletion only on an exact `state:"completed"` answer
+  bound to the same user id. A failed sign-in is never evidence. Pending, unknown or unreachable
+  answers keep the app blocked: no hydration, no success UI, private-support path documented in
+  OPERATOR_RUNBOOK.md. **Deployment and live failure-injection are still pending → the blocker is
+  reduced but NOT lifted** until `npm run test:live:deletion` passes on staging and the support
+  procedure is approved.
+- **Wildcard redirects are rejected** in `publicHttps()` (release gate) and the client's
+  production-redirect validator; previously `https://*.lovable.app` passed both.
+- **Storage/RLS local matrix extended**: owner-update denial, cross-user delete/modify denial flat
+  and nested, nested foreign-prefix denial, bucket privacy/20 MiB/PDF-JPEG-PNG declaration,
+  receipts-table client denial, receipts surviving account removal. `test:migrations` grew
+  26 → 41 assertions.
+- **Runnable live tooling added**: `npm run test:live:storage` (normal authenticated sessions only;
+  service role never used as RLS evidence) and `npm run test:live:deletion` (the 19-item matrix on
+  a third disposable account with hard safety rails: refuses to run if the disposable email equals
+  QA A/B, and finishes by proving A and B still sign in). Both scripts refuse without configuration
+  and never print a value.
+
+### VERIFIED LOCALLY (this pass)
+
+Jest **443/443** (41 suites; baseline 430), PGlite migrations **41 assertions**, Deno edge
+**29 passed** + both entrypoint checks (Deno 2.9.6 via `npx -y deno`), typecheck (both variants),
+lint, tooling 5, release-config 30, staging-config 11, client-secrets 4, offline 1, `build:web`
+(shell `a64499c599d72f49`), `check:secrets` 7 rules clean, `npm audit` 0 vulnerabilities,
+`git diff --check` clean. `check:staging` correctly refuses naming every missing variable;
+`test:live`, `test:live:storage`, `test:live:deletion` correctly refuse without opt-in/config.
+
+### VERIFIED LIVE (credential-free read-only probes only)
+
+`delete-account` and `proofpilot-ai` GET → `{"error":"method_not_allowed"}` (routes respond);
+`/auth/v1/health` → gateway rejects keyless requests. **This does not prove the new receipt build
+is deployed — it is not.**
+
+### BLOCKED in this sandbox (documented, not skipped)
+
+- **The entire destructive staging matrix (P1), hosted storage RLS (P3), auth/SMTP flows
+  (P4/P5) and live receipt recovery (P2-live):** no TLS egress to `*.supabase.co` from this
+  sandbox (curl exit 35; only npm/GitHub allowlisted; the managed fetch proxy is GET-only) and no
+  staging credentials were injected. Classification: **BLOCKED — REQUIRES EXTERNAL SERVICE +
+  CONFIGURATION.** Exact commands are in section 6 of the continuation review.
+- **`npm run test:e2e`:** Playwright's Chromium download host is blocked here. Last recorded pass
+  remains 56/56 on 2026-09-29; not re-run today.
+
+### Unchanged open blockers
+
+Hosted Auth/SMTP configuration; live deletion/storage/RLS/email evidence; provider-enabled AI
+matrix (AI stays disabled); EAS/store signing; real-device acceptance; legal/privacy/support
+decisions; full cross-browser design review. Features absent by design remain absent: no
+notifications, OCR, cloud attachment backup or payments.

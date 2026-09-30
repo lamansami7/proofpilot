@@ -14,6 +14,10 @@ const fetchMock = jest.fn();
 const originalFetch = global.fetch;
 const originalWrite = (AsyncStorage.setItem as jest.Mock).getMockImplementation();
 const ledger = async () => JSON.parse((await AsyncStorage.getItem(key))!);
+// Receipt-status answers used by the recovery probes. Pending/unknown must never confirm.
+const pendingStatus = () => ({ok:true,json:async () => ({deleted:false,state:'pending',userId:'owner'})});
+const unknownStatus = () => ({ok:true,json:async () => ({deleted:false,state:'unknown'})});
+const completedStatus = (userId='owner') => ({ok:true,json:async () => ({deleted:true,state:'completed',userId})});
 beforeEach(async () => {
   jest.clearAllMocks(); fetchMock.mockReset(); (AsyncStorage.setItem as jest.Mock).mockReset().mockImplementation(originalWrite!); await AsyncStorage.clear(); global.fetch = fetchMock;
   (auth.getUser as jest.Mock).mockResolvedValue({data:{user:{id:'owner',email:'qa@example.test'}},error:null});
@@ -33,15 +37,50 @@ test('failed durable intent write prevents any remote deletion', async () => {
   jest.spyOn(AsyncStorage,'setItem').mockRejectedValueOnce(new Error('disk full'));
   await expect(deleteCurrentAccount('not-stored')).rejects.toThrow(); expect(fetchMock).not.toHaveBeenCalled();
 });
+test('successful deletion confirms, purges and never issues a status probe', async () => {
+  expect(await deleteCurrentAccount('not-stored')).toEqual({localCleanupPending:false});
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(auth.signOut).toHaveBeenCalledWith({scope:'local'});
+  expect(removeUnreferencedFile).toHaveBeenCalledWith('managed');
+  expect(await AsyncStorage.getItem(key)).toBeNull();
+  expect(await AsyncStorage.getItem(storageKeyFor('owner'))).toBeNull();
+});
 test.each(['network','invalid JSON','not confirmed','server error'])('%s retains unknown ledger and local data', async failure => {
-  if (failure === 'network') fetchMock.mockRejectedValueOnce(new Error('lost response'));
+  if (failure === 'network') fetchMock.mockRejectedValueOnce(new Error('lost response')).mockResolvedValueOnce(pendingStatus());
   else fetchMock.mockResolvedValueOnce({ok:failure !== 'server error',json:async () => {
     if (failure === 'invalid JSON') throw new Error('invalid'); return {deleted:false};
-  }});
+  }}).mockResolvedValueOnce(pendingStatus());
   await expect(deleteCurrentAccount('not-stored')).rejects.toThrow();
   expect((await ledger()).confirmed).toBe(false);
+  expect((await ledger()).receipt).toMatch(/^[A-Za-z0-9_-]{43}$/);
   expect(await AsyncStorage.getItem(storageKeyFor('owner'))).not.toBeNull();
   expect(removeUnreferencedFile).not.toHaveBeenCalled(); expect(auth.signOut).not.toHaveBeenCalled();
+});
+test('server error followed by unknown receipt status still refuses to confirm', async () => {
+  fetchMock.mockResolvedValueOnce({ok:false,json:async () => ({error:'cleanup_pending_retry'})}).mockResolvedValueOnce(unknownStatus());
+  await expect(deleteCurrentAccount('not-stored')).rejects.toThrow('Deletion did not finish');
+  expect((await ledger()).confirmed).toBe(false);
+  expect(auth.signOut).not.toHaveBeenCalled();
+});
+test('lost final response is confirmed only by a matching server receipt, then purges', async () => {
+  fetchMock.mockRejectedValueOnce(new Error('lost response')).mockResolvedValueOnce(completedStatus());
+  expect(await deleteCurrentAccount('not-stored')).toEqual({localCleanupPending:false});
+  expect(auth.signOut).toHaveBeenCalledWith({scope:'local'});
+  expect(removeUnreferencedFile).toHaveBeenCalledWith('managed');
+  expect(await AsyncStorage.getItem(key)).toBeNull();
+  expect(await AsyncStorage.getItem(storageKeyFor('owner'))).toBeNull();
+});
+test('a completion receipt for a different account never confirms this ledger', async () => {
+  fetchMock.mockRejectedValueOnce(new Error('lost response')).mockResolvedValueOnce(completedStatus('intruder'));
+  await expect(deleteCurrentAccount('not-stored')).rejects.toThrow('could not be confirmed');
+  expect((await ledger()).confirmed).toBe(false);
+  expect(auth.signOut).not.toHaveBeenCalled(); expect(removeUnreferencedFile).not.toHaveBeenCalled();
+});
+test('an unreachable receipt endpoint never confirms deletion', async () => {
+  fetchMock.mockRejectedValueOnce(new Error('lost response')).mockRejectedValueOnce(new Error('offline'));
+  await expect(deleteCurrentAccount('not-stored')).rejects.toThrow('could not be confirmed');
+  expect((await ledger()).confirmed).toBe(false);
+  expect(auth.signOut).not.toHaveBeenCalled();
 });
 test('returned sign-out failure preserves confirmed ledger and cache for retry', async () => {
   (auth.signOut as jest.Mock).mockResolvedValueOnce({error:new Error('secure storage failed')});
@@ -74,5 +113,9 @@ test('purging a confirmed old account does not sign out the current account', as
 });
 test('malformed previous ledger never initiates remote deletion', async () => {
   await AsyncStorage.setItem(key,JSON.stringify({userId:'other',confirmed:false,files:[]}));
+  await expect(deleteCurrentAccount('not-stored')).rejects.toThrow(); expect(fetchMock).not.toHaveBeenCalled();
+});
+test('malformed receipt in a previous ledger fails closed instead of probing', async () => {
+  await AsyncStorage.setItem(key,JSON.stringify({userId:'owner',confirmed:false,files:[],receipt:'short'}));
   await expect(deleteCurrentAccount('not-stored')).rejects.toThrow(); expect(fetchMock).not.toHaveBeenCalled();
 });

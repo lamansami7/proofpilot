@@ -18,6 +18,8 @@
     "test:edge": "deno test supabase/functions/_shared/handlers_test.ts",
     "check:edge": "deno check supabase/functions/proofpilot-ai/index.ts supabase/functions/delete-account/index.ts",
     "test:live": "node scripts/verify-live.mjs",
+    "test:live:storage": "node scripts/verify-storage-live.mjs",
+    "test:live:deletion": "node scripts/verify-deletion-live.mjs",
     "check:release": "node scripts/check-release.mjs",
     "check:secrets": "node scripts/scan-client-secrets.mjs",
     "check:staging": "node scripts/check-staging-config.mjs",

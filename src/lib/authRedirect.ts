@@ -8,6 +8,8 @@ function normalizeHostname(hostname: string): string {
 }
 
 function isValidProductionRedirect(urlString: string): boolean {
+  // Exact origins only: wildcard hosts or paths are never accepted as auth redirects.
+  if (urlString.includes('*')) return false;
   try {
     const url = new URL(urlString);
     if (url.protocol !== 'https:') return false;

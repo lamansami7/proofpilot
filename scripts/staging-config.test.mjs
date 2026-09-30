@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assessStagingEnv, envFileSafety } from './check-staging-config.mjs';
+import { assessStagingEnv, assessDeletionEnv, deletionStagingReady, envFileSafety } from './check-staging-config.mjs';
 
 const REF = 'a'.repeat(20);
 const READY = {
@@ -16,6 +16,13 @@ const READY = {
   PROOFPILOT_TEST_PASSWORD_A: 'staging-password-a',
   PROOFPILOT_TEST_EMAIL_B: 'qa-b@example.test',
   PROOFPILOT_TEST_PASSWORD_B: 'staging-password-b',
+};
+const SERVICE_JWT = `h.${Buffer.from(JSON.stringify({ role: 'service' })).toString('base64url')}.s`;
+const DELETION_READY = {
+  ...READY,
+  PROOFPILOT_DELETE_TEST_EMAIL: 'qa-delete@example.test',
+  PROOFPILOT_DELETE_TEST_PASSWORD: 'disposable-password-1',
+  PROOFPILOT_SERVICE_ROLE_KEY: SERVICE_JWT,
 };
 
 test('a complete staging environment is reported ready', () => {
@@ -108,4 +115,52 @@ test('the live script still refuses to run without an explicit staging opt-in', 
   });
   assert.equal(child.status, 2, child.stderr);
   assert.match(child.stderr, /Not run/);
+});
+
+test('the deletion matrix environment is validated by name, with safety rails', () => {
+  assert.deepEqual(assessDeletionEnv(DELETION_READY), []);
+  assert.equal(deletionStagingReady(DELETION_READY), true);
+  assert.equal(deletionStagingReady(READY), false, 'base staging alone must not authorize the destructive matrix');
+
+  const missing = assessDeletionEnv({ ...READY });
+  const names = missing.map(([name]) => name);
+  for (const name of ['PROOFPILOT_DELETE_TEST_EMAIL', 'PROOFPILOT_DELETE_TEST_PASSWORD', 'PROOFPILOT_SERVICE_ROLE_KEY']) {
+    assert.ok(names.includes(name), `${name} must be reported when absent`);
+  }
+
+  const protectedAccount = assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_DELETE_TEST_EMAIL: DELETION_READY.PROOFPILOT_TEST_EMAIL_A.toUpperCase() });
+  assert.ok(protectedAccount.some(([name]) => name.startsWith('PROOFPILOT_DELETE_TEST_EMAIL/PROOFPILOT_TEST_EMAIL_A')), 'disposable account must never be QA A');
+  const protectedB = assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_DELETE_TEST_EMAIL: DELETION_READY.PROOFPILOT_TEST_EMAIL_B });
+  assert.ok(protectedB.some(([name]) => name.includes('_B')), 'disposable account must never be QA B');
+
+  const wrongKey = assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_SERVICE_ROLE_KEY: `h.${Buffer.from(JSON.stringify({ role: 'anon' })).toString('base64url')}.s` });
+  assert.ok(wrongKey.some(([name, detail]) => name === 'PROOFPILOT_SERVICE_ROLE_KEY' && detail.includes('service-role')));
+
+  const garbageKey = assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_SERVICE_ROLE_KEY: 'not-a-jwt' });
+  assert.ok(garbageKey.some(([name]) => name === 'PROOFPILOT_SERVICE_ROLE_KEY'));
+
+  const shortPassword = assessDeletionEnv({ ...DELETION_READY, PROOFPILOT_DELETE_TEST_PASSWORD: 'q7' });
+  assert.ok(shortPassword.some(([name, detail]) => name === 'PROOFPILOT_DELETE_TEST_PASSWORD' && detail.includes('shorter than')));
+  assert.ok(!JSON.stringify(assessDeletionEnv(DELETION_READY)).includes(DELETION_READY.PROOFPILOT_DELETE_TEST_EMAIL), 'emails must never be echoed in reports');
+});
+
+test('the deletion matrix script still refuses to run without its extra configuration', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const child = spawnSync(process.execPath, [new URL('./verify-deletion-live.mjs', import.meta.url).pathname], {
+    encoding: 'utf8',
+    env: { ...process.env, PROOFPILOT_ALLOW_STAGING_TESTS: '', PROOFPILOT_STAGING_PROJECT_REF: '' },
+  });
+  assert.equal(child.status, 2, child.stderr);
+  assert.match(child.stderr, /Not run: deletion matrix needs/);
+  assert.ok(!child.stderr.includes('@'), 'refusal output must not contain any email');
+});
+
+test('the storage matrix script still refuses to run without staging configuration', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const child = spawnSync(process.execPath, [new URL('./verify-storage-live.mjs', import.meta.url).pathname], {
+    encoding: 'utf8',
+    env: { ...process.env, PROOFPILOT_ALLOW_STAGING_TESTS: '', PROOFPILOT_STAGING_PROJECT_REF: '' },
+  });
+  assert.equal(child.status, 2, child.stderr);
+  assert.match(child.stderr, /Not run: storage verification needs/);
 });

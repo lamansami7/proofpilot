@@ -86,6 +86,15 @@ describe('getAuthRedirectUrl', () => {
     expect(getAuthRedirectUrl()).toBe('http://localhost:8081');
   });
 
+  test('rejects wildcard hosts and wildcard paths and falls back to window.location.origin', () => {
+    for (const wildcard of ['https://*.lovable.app', 'https://get-proofpilot.lovable.app/*']) {
+      process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL = wildcard;
+      // @ts-expect-error - mocking window for web
+      global.window = { location: { origin: 'http://localhost:8081' } };
+      expect(getAuthRedirectUrl()).toBe('http://localhost:8081');
+    }
+  });
+
   test('rejects 127.0.0.1 and falls back to window.location.origin', () => {
     process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL = 'https://127.0.0.1';
     // @ts-expect-error - mocking window for web
