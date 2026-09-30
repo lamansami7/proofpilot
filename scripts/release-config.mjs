@@ -14,7 +14,9 @@ function reservedHostname(hostname) {
 }
 
 export function publicHttps(value) {
-  if (typeof value !== 'string' || value !== value.trim() || !value) return false;
+  // No wildcards anywhere: a wildcard host or path is never an acceptable
+  // public URL or Supabase Auth redirect (exact origins only).
+  if (typeof value !== 'string' || value !== value.trim() || !value || value.includes('*')) return false;
   try {
     const url = new URL(value);
     const hostname = url.hostname.replace(/^\[(.*)\]$/, '$1').toLowerCase();

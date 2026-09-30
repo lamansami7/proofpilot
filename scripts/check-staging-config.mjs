@@ -13,6 +13,36 @@ const MIN_PASSWORD = 8; // matches supabase/config.toml minimum_password_length
 
 const present = (value) => typeof value === 'string' && value.trim() !== '';
 
+/** Extra requirements for the DESTRUCTIVE deletion matrix (third disposable account +
+ *  operator service-role evidence). Names and fault kinds only, never values. */
+export function assessDeletionEnv(env) {
+  const problems = [];
+  const email = env.PROOFPILOT_DELETE_TEST_EMAIL;
+  if (!present(email)) problems.push(['PROOFPILOT_DELETE_TEST_EMAIL', 'missing (the third, disposable deletion account)']);
+  else if (!EMAIL.test(email.trim())) problems.push(['PROOFPILOT_DELETE_TEST_EMAIL', 'does not look like an email address']);
+  const password = env.PROOFPILOT_DELETE_TEST_PASSWORD;
+  if (!present(password)) problems.push(['PROOFPILOT_DELETE_TEST_PASSWORD', 'missing']);
+  else if (password.length < MIN_PASSWORD) problems.push(['PROOFPILOT_DELETE_TEST_PASSWORD', `shorter than ${MIN_PASSWORD} characters`]);
+  for (const label of ['A', 'B']) {
+    if (present(email) && present(env[`PROOFPILOT_TEST_EMAIL_${label}`])
+      && email.trim().toLowerCase() === env[`PROOFPILOT_TEST_EMAIL_${label}`].trim().toLowerCase())
+      problems.push([`PROOFPILOT_DELETE_TEST_EMAIL/PROOFPILOT_TEST_EMAIL_${label}`, 'the disposable deletion account must never be a protected QA account']);
+  }
+  const serviceKey = env.PROOFPILOT_SERVICE_ROLE_KEY;
+  if (!present(serviceKey)) problems.push(['PROOFPILOT_SERVICE_ROLE_KEY', 'missing (operator-only server key for privileged post-deletion evidence)']);
+  else {
+    let role = null;
+    try { role = JSON.parse(Buffer.from(serviceKey.split('.')[1], 'base64url').toString()).role; } catch { role = null; }
+    if (role !== 'service') problems.push(['PROOFPILOT_SERVICE_ROLE_KEY', 'not a service-role key (never substitute an anon or publishable key)']);
+  }
+  return problems;
+}
+
+/** Full gate for `npm run test:live:deletion`: base staging plus the disposable-account extras. */
+export function deletionStagingReady(env) {
+  return stagingConfigured(env) && assessDeletionEnv(env).length === 0;
+}
+
 /**
  * Pure assessment of a staging environment object.
  * Returns `{ ready, problems }`; each problem names a variable and the kind of fault.
@@ -74,6 +104,15 @@ function main() {
   if (safety === 'tracked') findings.unshift([envFile, 'is tracked by git — remove it from the index and rotate anything it contained']);
 
   console.log(`Staging window: ${loaded ? `${envFile} loaded (process environment wins; values are never printed)` : `${envFile} not found — using the process environment only`}`);
+  // Destructive-deletion extras are validated whenever any of them is present so a
+  // half-configured deletion window can never run silently.
+  const deletionVars = ['PROOFPILOT_DELETE_TEST_EMAIL', 'PROOFPILOT_DELETE_TEST_PASSWORD', 'PROOFPILOT_SERVICE_ROLE_KEY'];
+  const deletionTouched = deletionVars.some(name => present(process.env[name]));
+  if (deletionTouched) {
+    for (const [name, detail] of assessDeletionEnv(process.env)) findings.push([name, detail]);
+  } else {
+    console.log('Deletion matrix (npm run test:live:deletion) additionally needs PROOFPILOT_DELETE_TEST_EMAIL, PROOFPILOT_DELETE_TEST_PASSWORD and PROOFPILOT_SERVICE_ROLE_KEY — see OPERATOR_RUNBOOK.md.');
+  }
   if (findings.length) {
     console.error('STAGING NOT READY:');
     for (const [name, detail] of findings) console.error(`- ${name}: ${detail}`);

@@ -41,6 +41,8 @@ const REDIRECT_UNSAFE = [
   'https://placeholder.invalid',
   'javascript:alert(1)',                      // unsafe protocol
   'proofpilot://auth/callback',               // native scheme is not a web redirect
+  'https://*.lovable.app',                    // wildcard host must never be an auth redirect
+  'https://get-proofpilot.lovable.app/*',     // wildcard path must never be an auth redirect
   '',
 ];
 for (const value of REDIRECT_UNSAFE) {
@@ -86,9 +88,10 @@ test('Supabase URLs are standard project origins and AI endpoints cannot send co
 });
 
 test('rejects reserved example domains, IP literals, single-label hosts, and whitespace', () => {
-  for (const url of ['https://example.com/privacy', 'https://sub.example.org', ' https://proofpilot.app ', 'https://192.168.1.1', 'https://10.0.0.8', 'https://172.16.2.3', 'https://[fd00::1]', 'https://com']) {
+  for (const url of ['https://example.com/privacy', 'https://sub.example.org', ' https://proofpilot.app ', 'https://192.168.1.1', 'https://10.0.0.8', 'https://172.16.2.3', 'https://[fd00::1]', 'https://com', 'https://*.lovable.app', 'https://app.lovable.app/*']) {
     assert.equal(publicHttps(url), false, url);
   }
+  assert.equal(publicHttps('https://get-proofpilot.lovable.app'), true);
   for (const email of ['support@example.com', 'owner@example.org', 'support@service.invalid', ' support@proofpilot.app', 'support@foo..bar', 'support@-invalid.test']) {
     assert.equal(publicSupportEmail(email), false, email);
   }

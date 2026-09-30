@@ -1,9 +1,24 @@
 import { createDeletionHandler } from '../_shared/deletion.ts';
 import { admin, allowedOrigins, authenticate } from '../_shared/runtime.ts';
 const bucket = admin.storage.from('purchase-documents');
+const receipts = admin.from('account_deletion_receipts');
 Deno.serve(createDeletionHandler({
   allowedOrigins, authenticate,
   begin: async userId => { const { error } = await admin.from('account_deletion_requests').upsert({ user_id:userId }); if (error) throw error; },
+  // Hash-only receipt rows (service role): pending before destructive work, completed after Auth deletion.
+  receiptPending: async (hash,userId) => {
+    const { error } = await receipts.upsert({ receipt_hash:hash,user_id:userId },{ onConflict:'receipt_hash',ignoreDuplicates:true });
+    if (error) throw error;
+  },
+  receiptCompleted: async hash => {
+    const { data,error } = await receipts.update({ completed_at:new Date().toISOString() }).eq('receipt_hash',hash).select('receipt_hash');
+    if (error || data?.length !== 1) throw new Error('receipt completion was not recorded');
+  },
+  receiptStatus: async hash => {
+    const { data,error } = await receipts.select('user_id,completed_at').eq('receipt_hash',hash).maybeSingle();
+    if (error) throw error;
+    return data ? { userId:data.user_id,completedAt:data.completed_at } : null;
+  },
   removeFiles: async userId => {
     let removed = 0;
     const clear = async (prefix: string, depth = 0): Promise<boolean> => {
