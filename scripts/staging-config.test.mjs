@@ -84,8 +84,11 @@ test('env file safety distinguishes ignored, not ignored, tracked and missing fi
   }
 });
 
-test('the repository ignores its own .env.local', () => {
-  assert.equal(envFileSafety('.env.local', process.cwd()), 'missing');
+test('the repository keeps its own .env.local safe (absent, or present but gitignored)', () => {
+  // 'ignored' is the documented operator setup on machines with local staging
+  // credentials; 'missing' is the fresh-checkout state. Both are safe; only
+  // 'tracked' or 'not-ignored' would let secrets reach git.
+  assert.ok(['missing', 'ignored'].includes(envFileSafety('.env.local', process.cwd())), '.env.local must never be tracked or unignored');
   assert.equal(envFileSafety('.env.example', process.cwd()), 'tracked');
 });
 

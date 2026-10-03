@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from './Feather';
 import { colors, radius, spacing, type } from '../design/tokens';
-import { validatePurchaseFields } from '../lib/purchaseValidation';
+import { validatePurchaseFields, type PurchaseFields } from '../lib/purchaseValidation';
 import { PurchaseConflictError } from '../lib/localPurchaseStore';
 import { persistDocumentUri } from '../lib/documents';
 import { documentFailureMessage } from '../lib/documentErrors';
@@ -190,6 +190,7 @@ function FormStep({ form, errors, documents, upload, uploadError, customDeadline
   const warrantyRef = React.useRef<TextInput>(null);
   const merchantRef = React.useRef<TextInput>(null);
   const priceRef = React.useRef<TextInput>(null);
+  const notesRef = React.useRef<TextInput>(null);
   const focusNext = (next: React.RefObject<TextInput | null>) => { try { next.current?.focus(); } catch { /* platform refused focus — keyboard stays put */ } };
   const deadlineValid = Boolean(deadlineTitle.trim() && isValidIsoDate(deadlineDate));
   const savedDeadlinesValid = customDeadlines.every((deadline) => Boolean(deadline.title.trim() && isValidIsoDate(deadline.date)));
@@ -258,7 +259,7 @@ function FormStep({ form, errors, documents, upload, uploadError, customDeadline
         </View>
       </View>
       <View style={{ height: spacing.md }} />
-      <Input label="NOTES" value={form.notes} onChangeText={(value) => update('notes', value)} placeholder="Anything else worth remembering" multiline />
+      <Input ref={notesRef} label="NOTES" value={form.notes} onChangeText={(value) => update('notes', value)} placeholder="Anything else worth remembering" multiline />
 
       <View style={styles.documentCard}>
         <View style={styles.documentHeader}>
@@ -291,8 +292,8 @@ function FormStep({ form, errors, documents, upload, uploadError, customDeadline
         <Button label="Review purchase" icon="arrow-right" onPress={() => {
           if (onNext()) return;
           const invalid = validatePurchaseFields(form);
-          const refs = { name: nameRef, merchant: merchantRef, price: priceRef, purchaseDate: purchaseDateRef, returnDeadline: returnRef, warrantyEnd: warrantyRef };
-          for (const field of Object.keys(refs) as Array<keyof typeof refs>) {
+          const refs: Record<keyof PurchaseFields, React.RefObject<TextInput | null>> = { name: nameRef, merchant: merchantRef, price: priceRef, purchaseDate: purchaseDateRef, returnDeadline: returnRef, warrantyEnd: warrantyRef };
+          for (const field of Object.keys(refs) as Array<keyof PurchaseFields>) {
             if (invalid[field]) { refs[field].current?.focus(); break; }
           }
         }} disabled={!savedDeadlinesValid} fullWidth />

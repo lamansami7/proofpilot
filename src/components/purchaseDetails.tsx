@@ -374,7 +374,7 @@ export function PurchaseDetails({
           </Card>
         ) : (
           <View style={styles.dangerRow}>
-            <Text style={type.caption}>Record ID: {String(purchase.id)} · Protected content is local-first</Text>
+            <Text style={type.caption}>Saved on this device — files and details stay local-first.</Text>
             <Button size="sm" variant="ghost" icon="trash-2" label="Delete purchase" accessibilityLabel="Delete this purchase" onPress={() => setConfirmDelete(true)} />
           </View>
         )}

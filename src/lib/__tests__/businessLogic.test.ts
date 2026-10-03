@@ -41,7 +41,8 @@ describe('protection and search selectors', () => {
 
 describe('stored-record migration', () => {
   test('repairs derived flags and drops malformed dates without losing a record', () => {
-    const [item] = migratePurchases([{ id: 4, name: 'Camera', merchant: 'Shop', price: 10, purchaseDate: '2026-02-31', returnDeadline: '2026-10-01', documents: [{ id: 'r', name: 'r.jpg', kind: 'receipt', mimeType: 'image/jpeg' }], deadlines: [{ id: 'bad', type: 'custom', date: 'nope', title: 'Bad' }] }]);
+    // Far-future deadline keeps the protection assertion independent of the real clock.
+    const [item] = migratePurchases([{ id: 4, name: 'Camera', merchant: 'Shop', price: 10, purchaseDate: '2026-02-31', returnDeadline: '2099-12-31', documents: [{ id: 'r', name: 'r.jpg', kind: 'receipt', mimeType: 'image/jpeg' }], deadlines: [{ id: 'bad', type: 'custom', date: 'nope', title: 'Bad' }] }]);
     expect(item.purchaseDate).toBeNull(); expect(item.hasReceipt).toBe(true); expect(item.deadlines).toEqual([]); expect(item.protectionStatus).toBe('protected');
   });
 });
