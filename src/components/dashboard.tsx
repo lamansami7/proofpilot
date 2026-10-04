@@ -176,7 +176,7 @@ export function Dashboard(props: DashboardProps) {
               </View>
               <Text style={styles.heroNumber}>
                 {summary.protected}
-                <Text style={{ fontSize: 20, color: '#B5C6C2', fontWeight: '600' }}> / {summary.total}</Text>
+                <Text style={{ fontSize: 20, color: colors.heroTextFaint, fontWeight: '600' }}> / {summary.total}</Text>
               </Text>
               <Text style={styles.heroAsideLabel}>actively protected</Text>
               <Text style={styles.heroAsideNote}>Receipt on record + an active return or warranty window</Text>
@@ -518,10 +518,10 @@ const styles = StyleSheet.create({
   heroPhone: { padding: spacing.lg, borderRadius: 20, gap: spacing.lg },
   heroCopy: { flex: 1, flexBasis: 320, minWidth: 0 },
   heroKicker: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  heroEyebrow: { color: '#C6E0BD', fontSize: 10, letterSpacing: 1.4, fontWeight: '700', flexShrink: 1 },
-  heroTitle: { fontSize: 32, lineHeight: 38, letterSpacing: -1, color: '#FFFFFF', fontWeight: '800', marginTop: spacing.lg },
+  heroEyebrow: { color: colors.heroEyebrow, fontSize: 10, letterSpacing: 1.4, fontWeight: '700', flexShrink: 1 },
+  heroTitle: { fontSize: 32, lineHeight: 38, letterSpacing: -1, color: colors.heroText, fontWeight: '800', marginTop: spacing.lg },
   heroTitlePhone: { fontSize: 26, lineHeight: 32 },
-  heroBody: { color: '#CCDAD4', fontSize: 14, lineHeight: 22, marginTop: spacing.md, maxWidth: 480 },
+  heroBody: { color: colors.heroTextSoft, fontSize: 14, lineHeight: 22, marginTop: spacing.md, maxWidth: 480 },
   heroBodyPhone: { fontSize: 13, lineHeight: 20 },
   heroAsidePhone: { flexBasis: '100%', marginTop: spacing.md },
   heroAside: {
@@ -545,9 +545,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
   },
-  heroNumber: { color: '#FFFFFF', fontWeight: '800', fontSize: 42, letterSpacing: -2, marginTop: 10 },
-  heroAsideLabel: { color: '#E2EFDD', fontSize: 13, fontWeight: '700', marginTop: 2 },
-  heroAsideNote: { color: '#BECEC6', textAlign: 'center', fontSize: 11, lineHeight: 16, marginTop: 8 },
+  heroNumber: { color: colors.heroText, fontWeight: '800', fontSize: 42, letterSpacing: -2, marginTop: 10 },
+  heroAsideLabel: { color: colors.heroAsideLabel, fontSize: 13, fontWeight: '700', marginTop: 2 },
+  heroAsideNote: { color: colors.heroAsideNote, textAlign: 'center', fontSize: 11, lineHeight: 16, marginTop: 8 },
   heroMeta: { marginTop: spacing.md, alignItems: 'center' },
   heroMetaPill: {
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -556,8 +556,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     alignItems: 'center',
   },
-  heroMetaValue: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
-  heroMetaLabel: { color: '#BECEC6', fontSize: 10, letterSpacing: 0.5, fontWeight: '600' },
+  heroMetaValue: { color: colors.heroText, fontWeight: '800', fontSize: 13 },
+  heroMetaLabel: { color: colors.heroAsideNote, fontSize: 10, letterSpacing: 0.5, fontWeight: '600' },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.lg },
   metricsPhone: { gap: spacing.sm },
   metric: { flex: 1, flexBasis: 180, padding: spacing.lg, minWidth: 0, gap: spacing.sm },

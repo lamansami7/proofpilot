@@ -165,14 +165,6 @@ export function PurchaseDetails({
       title={purchase.name}
       subtitle={`${formatMoney(purchase.price)} · Purchased ${formatDate(purchase.purchaseDate)} · ${purchase.category}`}
     >
-      {/* Back affordance */}
-      <View style={styles.breadcrumb}>
-        <Feather name="chevron-left" size={14} color={colors.muted} />
-        <Text style={type.caption}>Purchases</Text>
-        <Text style={type.caption}>·</Text>
-        <Text style={[type.caption, { color: colors.ink, fontWeight: '700', flex: 1, minWidth: 0 }]} numberOfLines={1}>{purchase.name}</Text>
-      </View>
-
       <View style={styles.headerRow}>
         <ProductTile purchase={purchase} size={56} />
         <View style={{ flex: 1, gap: 6, minWidth: 0 }}>
@@ -238,7 +230,7 @@ export function PurchaseDetails({
         </View>
         <Text style={[type.body, { marginTop: spacing.sm }]}>
           {purchase.hasReceipt
-            ? `${purchase.documents.filter((d) => d.kind === 'receipt').length} receipt record(s) attached. These saved records inform your protection status; their contents have not been verified.`
+            ? `${purchase.documents.filter((d) => d.kind === 'receipt').length} receipt ${purchase.documents.filter((d) => d.kind === 'receipt').length === 1 ? 'record' : 'records'} attached. These saved records inform your protection status; their contents have not been verified.`
             : 'No receipt on record. Add your proof of purchase so it’s easy to find when you need it — it also upgrades this purchase to “Protected” when an active window exists.'}
         </Text>
         <Text style={[type.caption, { marginTop: spacing.sm, color: colors.muted }]}>
@@ -437,7 +429,6 @@ function DocumentRow({ document, onOpen }: { document: PurchaseDocument; onOpen:
 }
 
 const styles = StyleSheet.create({
-  breadcrumb: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: spacing.md },
   headerRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: spacing.md, marginBottom: spacing.lg },
   headerActions: { maxWidth: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginLeft: 'auto' },
   kindPicker: {

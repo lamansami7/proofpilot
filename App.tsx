@@ -2,7 +2,7 @@ import { AppErrorBoundary } from './src/components/appErrorBoundary';
 import { registerOfflineShell } from './src/lib/offlineShell';
 import { deleteCurrentAccount, resumeConfirmedPurges } from './src/lib/accountDeletion';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from './src/components/Feather';
 import { StatusBar } from 'expo-status-bar';
 import { AuthScreen, PasswordRecovery } from './src/components/authScreen';
@@ -14,7 +14,7 @@ import { PurchasesScreen } from './src/components/purchasesScreen';
 import { SettingsScreen } from './src/components/settingsScreen';
 import { VaultScreen } from './src/components/vaultScreen';
 import { Onboarding } from './src/components/onboarding';
-import { Banner, Button, IconButton, Input, LoadingState, interactive } from './src/components/ui';
+import { Banner, BrandMark, Button, IconButton, Input, LoadingState, interactive, useReducedMotion } from './src/components/ui';
 import { demoPurchases } from './src/data/demoPurchases';
 import { colors, radius, shadows, sizing, spacing, type } from './src/design/tokens';
 import { useAppSettings } from './src/hooks/useAppSettings';
@@ -185,9 +185,7 @@ function ProofPilotApp() {
         <StatusBar style="dark" />
         <View style={styles.boot}>
           <View style={styles.brand}>
-            <View style={styles.logo}>
-              <Feather name="shield" size={20} color={colors.ink} />
-            </View>
+            <BrandMark size={40} />
             <Text style={styles.brandName}>ProofPilot</Text>
           </View>
           <LoadingState label="Checking your session…" />
@@ -454,17 +452,34 @@ function ProofPilotApp() {
         onNotify={notify}
       />
 
-      {toast ? (
-        <View accessibilityLiveRegion="polite" style={[styles.toast, viewport.isPhone && styles.toastPhone]}>
-          <Feather
-            name={toast.tone === 'danger' ? 'alert-circle' : toast.tone === 'info' ? 'info' : 'check-circle'}
-            color={toast.tone === 'danger' ? '#F2B8BD' : toast.tone === 'info' ? '#B9CFEA' : colors.brand}
-            size={17}
-          />
-          <Text style={styles.toastText}>{toast.message}</Text>
-        </View>
-      ) : null}
+      {toast ? <Toast toast={toast} isPhone={viewport.isPhone} /> : null}
     </SafeAreaView>
+  );
+}
+
+function Toast({ toast, isPhone }: { toast: Toast; isPhone?: boolean }) {
+  const reducedMotion = useReducedMotion();
+  const opacity = useRef(new Animated.Value(reducedMotion ? 1 : 0)).current;
+  const slide = useRef(new Animated.Value(reducedMotion ? 0 : 8)).current;
+  useEffect(() => {
+    if (reducedMotion) return;
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: false }),
+      Animated.timing(slide, { toValue: 0, duration: 180, useNativeDriver: false }),
+    ]).start();
+  }, [reducedMotion, opacity, slide]);
+  return (
+    <Animated.View
+      accessibilityLiveRegion="polite"
+      style={[styles.toast, isPhone && styles.toastPhone, { opacity, transform: [{ translateY: slide }] }]}
+    >
+      <Feather
+        name={toast.tone === 'danger' ? 'alert-circle' : toast.tone === 'info' ? 'info' : 'check-circle'}
+        color={toast.tone === 'danger' ? colors.toastIconDanger : toast.tone === 'info' ? colors.toastIconInfo : colors.toastIconSuccess}
+        size={17}
+      />
+      <Text style={styles.toastText}>{toast.message}</Text>
+    </Animated.View>
   );
 }
 
@@ -488,9 +503,7 @@ function Sidebar({
   return (
     <View style={styles.sidebar}>
       <View style={styles.brand}>
-        <View style={styles.logo}>
-          <Feather name="shield" size={20} color={colors.ink} />
-        </View>
+        <BrandMark size={40} />
         <View>
           <Text style={styles.brandName}>ProofPilot</Text>
           <Text style={styles.brandTag}>PURCHASE PROTECTION</Text>
@@ -595,9 +608,7 @@ function Topbar({
     <View style={[styles.topbar, compact && styles.topbarCompact]}>
       {compact ? (
         <View style={styles.mobileBrand}>
-          <View style={styles.logoSmall}>
-            <Feather name="shield" size={15} color={colors.ink} />
-          </View>
+          <BrandMark size={28} />
           <Text style={styles.brandName}>ProofPilot</Text>
         </View>
       ) : null}
@@ -617,7 +628,7 @@ function Topbar({
       </View>
       <View>
         <IconButton
-          icon="bell"
+          icon="clock"
           label={urgentCount ? `View deadlines: ${urgentCount} urgent` : 'View deadlines'}
           onPress={onDeadlines}
         />
@@ -718,22 +729,6 @@ const styles = StyleSheet.create({
     ...shadows.card,
   },
   brand: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.sm },
-  logo: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.brand,
-  },
-  logoSmall: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.brand,
-  },
   brandName: { fontSize: 17, fontWeight: '800', letterSpacing: -0.6, color: colors.ink },
   brandTag: { fontSize: 8, fontWeight: '800', letterSpacing: 1.05, color: colors.subtle, marginTop: 2 },
   nav: { marginTop: spacing.xl, flex: 1 },
@@ -798,7 +793,7 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F2E7DD',
+    backgroundColor: colors.avatarSurface,
   },
   avatarText: { fontSize: 11, fontWeight: '800', color: colors.ink },
   topbar: {
@@ -859,7 +854,7 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F2E7DD',
+    backgroundColor: colors.avatarSurface,
     paddingHorizontal: 6,
   },
   content: { width: '100%', maxWidth: sizing.contentMax, alignSelf: 'center', padding: spacing.xl, paddingBottom: 72 },
@@ -917,7 +912,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    backgroundColor: '#203125',
+    backgroundColor: colors.toastSurface,
     flexDirection: 'row',
     gap: spacing.sm,
     alignItems: 'center',

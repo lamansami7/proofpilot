@@ -19,6 +19,23 @@ import { Feather } from './Feather';
 import { breakpoints, colors, radius, shadows, sizing, spacing, type, webTransition } from '../design/tokens';
 import type { FeatherIconName } from '../types/purchase';
 
+/** True while the OS "reduce motion" accessibility setting is on. */
+export function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((value) => {
+      if (active) setReduced(value);
+    });
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+  return reduced;
+}
+
 /** react-native-web extends the pressable state with hovered/focused on web. */
 export type InteractiveState = { pressed: boolean; hovered?: boolean; focused?: boolean };
 const hoverStyle: ViewStyle = { backgroundColor: 'rgba(21, 34, 54, 0.045)' };
@@ -310,10 +327,12 @@ export type InputProps = TextInputProps & {
   error?: string;
   prefix?: string;
   hint?: string;
+  /** Trailing control rendered inside the input shell (e.g. password reveal). */
+  right?: React.ReactNode;
   containerStyle?: ViewStyle;
 };
 export const Input = React.forwardRef<TextInput, InputProps>(function Input(props, ref) {
-  const { label, error, prefix, hint, containerStyle, ...inputProps } = props;
+  const { label, error, prefix, hint, right, containerStyle, ...inputProps } = props;
   const descriptionId = React.useId();
   return (
     <View style={[inputProps.multiline ? { flex: 1 } : null, containerStyle]}>
@@ -341,6 +360,7 @@ export const Input = React.forwardRef<TextInput, InputProps>(function Input(prop
             inputProps.style,
           ]}
         />
+        {right}
       </View>
       {error ? (
         <Text nativeID={descriptionId} accessibilityLiveRegion="polite" style={styles.inputError}>
@@ -381,6 +401,35 @@ export function SearchBar({
     </View>
   );
 }
+
+/**
+ * Password field with a labeled show/hide toggle. The reveal control keeps a
+ * 44px target and stays outside the input's accessibility description so the
+ * typed value and the toggle are announced separately.
+ */
+export const PasswordInput = React.forwardRef<TextInput, InputProps>(function PasswordInput(props, ref) {
+  const [visible, setVisible] = useState(false);
+  const inputProps = props;
+  return (
+    <Input
+      ref={ref}
+      {...inputProps}
+      secureTextEntry={!visible}
+      right={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={visible ? 'Hide password' : 'Show password'}
+          accessibilityState={{ expanded: visible }}
+          hitSlop={6}
+          onPress={() => setVisible((value) => !value)}
+          style={interactive(styles.passwordToggle, { pressed: { opacity: 0.6 } })}
+        >
+          <Feather name={visible ? 'eye-off' : 'eye'} size={16} color={colors.muted} />
+        </Pressable>
+      }
+    />
+  );
+});
 
 export function Chip({
   label,
@@ -456,18 +505,7 @@ export function Sheet({
 }) {
   const { width } = useWindowDimensions();
   const phone = width <= breakpoints.phone;
-  const [reducedMotion, setReducedMotion] = useState(false);
-  useEffect(() => {
-    let active = true;
-    AccessibilityInfo.isReduceMotionEnabled().then((value) => {
-      if (active) setReducedMotion(value);
-    });
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReducedMotion);
-    return () => {
-      active = false;
-      subscription.remove();
-    };
-  }, []);
+  const reducedMotion = useReducedMotion();
   // React Native Web's Modal owns active-dialog Escape, focus trapping and
   // focus restoration. An extra global Escape handler closes nested parents.
   if (!visible) return null;
@@ -672,6 +710,84 @@ export function SkeletonList({ count = 3 }: { count?: number }) {
       {Array.from({ length: count }).map((_, i) => (
         <SkeletonCard key={i} />
       ))}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// BrandMark — the ProofPilot shield + verification check, matching the
+// launcher art. Lime tile, deep shield, lime check badge.
+// ---------------------------------------------------------------------------
+export function BrandMark({
+  size = 40,
+  withCheckBadge = true,
+  accessibilityLabel = 'ProofPilot',
+}: {
+  size?: number;
+  withCheckBadge?: boolean;
+  accessibilityLabel?: string;
+}) {
+  const badge = Math.max(13, Math.round(size * 0.42));
+  return (
+    <View accessible accessibilityRole="image" accessibilityLabel={accessibilityLabel} style={[styles.brandMark, { width: size, height: size, borderRadius: Math.round(size * 0.32) }]}>
+      <Feather name="shield" size={Math.round(size * 0.52)} color={colors.brandDark} />
+      {withCheckBadge ? (
+        <View
+          style={[
+            styles.brandMarkBadge,
+            {
+              width: badge,
+              height: badge,
+              borderRadius: badge / 2,
+              right: Math.max(-3, -size * 0.1),
+              bottom: Math.max(-3, -size * 0.1),
+            },
+          ]}
+        >
+          <Feather name="check" size={Math.round(badge * 0.62)} color={colors.brandDark} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// StepIndicator — compact flow progress for multi-step sheets.
+// ---------------------------------------------------------------------------
+export function StepIndicator({
+  steps,
+  current,
+  startIndex = 0,
+}: {
+  steps: string[];
+  current: number;
+  startIndex?: number;
+}) {
+  return (
+    <View
+      accessibilityLabel={`Step ${Math.min(current + 1, steps.length)} of ${steps.length}: ${steps[Math.min(current, steps.length - 1)]}`}
+      style={styles.stepIndicator}
+    >
+      {steps.map((label, index) => {
+        const done = index < current && index >= startIndex;
+        const active = index === current;
+        return (
+          <React.Fragment key={label}>
+            {index > 0 ? <View style={[styles.stepTrack, (index - 1) < current && styles.stepTrackDone]} /> : null}
+            <View
+              aria-current={active ? 'step' : undefined}
+              style={[styles.stepNode, active ? styles.stepNodeActive : null, done ? styles.stepNodeDone : null]}
+            >
+              <Feather
+                name={done ? 'check' : 'circle'}
+                size={Math.round(active ? 9 : 8)}
+                color={done || active ? colors.brandDark : colors.subtle}
+              />
+            </View>
+            <Text numberOfLines={1} style={[styles.stepLabel, active ? styles.stepLabelActive : null]}>{label}</Text>
+          </React.Fragment>
+        );
+      })}
     </View>
   );
 }
@@ -883,4 +999,48 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
   },
+  passwordToggle: {
+    minWidth: sizing.touchCompact,
+    minHeight: sizing.touchCompact,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -spacing.xs,
+  },
+  brandMark: {
+    backgroundColor: colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandMarkBadge: {
+    position: 'absolute',
+    backgroundColor: colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  stepIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  stepNode: {
+    width: 22,
+    height: 22,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+  },
+  stepNodeActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  stepNodeDone: { backgroundColor: colors.brandMuted, borderColor: colors.brandBorder },
+  stepTrack: { width: 18, height: 2, borderRadius: radius.pill, backgroundColor: colors.border },
+  stepTrackDone: { backgroundColor: colors.brand },
+  stepLabel: { ...type.caption, fontSize: 11, color: colors.muted, flexShrink: 1 },
+  stepLabelActive: { color: colors.ink, fontWeight: '700' },
 });

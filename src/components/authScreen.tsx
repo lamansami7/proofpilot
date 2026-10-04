@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { authThrottleMessage, createAuthThrottle, isRateLimitedError } from '../lib/authThrottle';
 import { Feather } from './Feather';
-import { colors, shadows, spacing, type } from '../design/tokens';
-import { Banner, Button, Card, Input } from './ui';
+import { colors, radius, spacing, type } from '../design/tokens';
+import { Banner, BrandMark, Button, Card, Input, PasswordInput } from './ui';
 
 export type AuthResult = void | { info?: string };
 
@@ -30,6 +30,7 @@ export function AuthScreen({ onSubmit, onResetPassword, onResendConfirmation }: 
   const [info, setInfo] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [loading, setLoading] = useState(false);
+  const passwordRef = useRef<TextInput>(null);
 
   // Client-side pacing only; Supabase's server-side limits remain the real control.
   const throttle = useMemo(() => createAuthThrottle(), []);
@@ -92,7 +93,7 @@ export function AuthScreen({ onSubmit, onResetPassword, onResendConfirmation }: 
   return (
     <ScrollView contentContainerStyle={[styles.page, { flexGrow: 1 }]} keyboardShouldPersistTaps="handled">
       <View style={styles.brandRow}>
-        <View style={styles.logo}><Feather name="shield" size={22} color={colors.ink} /></View>
+        <BrandMark size={44} />
         <View>
           <Text style={styles.brandName}>ProofPilot</Text>
           <Text style={styles.brandTag}>PURCHASE PROTECTION</Text>
@@ -104,9 +105,33 @@ export function AuthScreen({ onSubmit, onResetPassword, onResendConfirmation }: 
         {info ? <View style={{ marginTop: spacing.lg }}><Banner tone="info" icon="mail" title="Check your inbox" message={info} /></View> : null}
         {error ? <View style={{ marginTop: spacing.lg }}><Banner tone="danger" icon="alert-circle" title="We couldn’t sign you in" message={error} /></View> : null}
         <View style={styles.form}>
-          <Input editable={!loading} label="EMAIL" value={email} onChangeText={(value) => { setEmail(value); setFieldErrors((current) => ({ ...current, email: undefined })); }} autoCapitalize="none" keyboardType="email-address" autoComplete="email" error={fieldErrors.email} />
-          <Input editable={!loading} label="PASSWORD" value={password} onChangeText={(value) => { setPassword(value); setFieldErrors((current) => ({ ...current, password: undefined })); }} secureTextEntry autoComplete={signUp ? 'new-password' : 'password'} error={fieldErrors.password} hint={signUp ? 'At least 8 characters' : undefined} />
-          <Button label={loading ? 'Please wait…' : signUp ? 'Create account' : 'Sign in'} onPress={submit} icon="arrow-right" loading={loading} fullWidth />
+          <Input
+            editable={!loading}
+            label="EMAIL"
+            value={email}
+            onChangeText={(value) => { setEmail(value); setFieldErrors((current) => ({ ...current, email: undefined })); }}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            autoComplete="email"
+            textContentType="emailAddress"
+            returnKeyType="next"
+            onSubmitEditing={() => passwordRef.current?.focus()}
+            error={fieldErrors.email}
+          />
+          <PasswordInput
+            ref={passwordRef}
+            editable={!loading}
+            label="PASSWORD"
+            value={password}
+            onChangeText={(value) => { setPassword(value); setFieldErrors((current) => ({ ...current, password: undefined })); }}
+            autoComplete={signUp ? 'new-password' : 'password'}
+            textContentType={signUp ? 'newPassword' : 'password'}
+            returnKeyType="done"
+            onSubmitEditing={() => void submit()}
+            error={fieldErrors.password}
+            hint={signUp ? 'At least 8 characters' : undefined}
+          />
+          <Button label={signUp ? 'Create account' : 'Sign in'} onPress={submit} icon="arrow-right" loading={loading} fullWidth />
         </View>
         {onResetPassword && !signUp ? <Button label="Forgot password?" variant="ghost" onPress={resetPassword} disabled={loading} fullWidth /> : null}
         {onResendConfirmation && signUp ? <Button label="Resend confirmation email" variant="ghost" onPress={resendConfirmation} disabled={loading} fullWidth /> : null}
@@ -120,11 +145,18 @@ export function AuthScreen({ onSubmit, onResetPassword, onResendConfirmation }: 
 const styles = StyleSheet.create({
   page: { justifyContent: 'center', padding: spacing.lg, backgroundColor: colors.canvas },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, alignSelf: 'center', marginBottom: spacing.xl, width: '100%', maxWidth: 460 },
-  logo: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.brand },
   brandName: { fontSize: 18, fontWeight: '800', letterSpacing: -0.6, color: colors.ink },
   brandTag: { fontSize: 8.5, fontWeight: '800', letterSpacing: 1.1, color: colors.subtle, marginTop: 2 },
-  card: { width: '100%', maxWidth: 460, alignSelf: 'center', padding: spacing.xxl, ...shadows.raised },
+  card: { width: '100%', maxWidth: 460, alignSelf: 'center', padding: spacing.xxl, gap: spacing.md },
   form: { gap: spacing.md, marginVertical: spacing.xl },
+  recoveryIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.md,
+    backgroundColor: colors.brandMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
 
 export function PasswordRecovery({ onSave }: { onSave: (password: string) => Promise<void> }) {
@@ -142,9 +174,35 @@ export function PasswordRecovery({ onSave }: { onSave: (password: string) => Pro
     catch { if (active.current) setError('Password change could not be confirmed. Retry or request a new recovery link.'); }
     finally { request.current = false; if (active.current) setBusy(false); }
   };
-  return <View style={styles.page}><Card style={styles.card}>
-    <Text style={type.heading}>Choose a new password</Text>
-    <Input editable={!busy} label="NEW PASSWORD" secureTextEntry autoComplete="new-password" value={password} onChangeText={setPassword} error={error} />
-    <Button label="Save new password" onPress={save} loading={busy} />
-  </Card></View>;
+  return (
+    <ScrollView contentContainerStyle={[styles.page, { flexGrow: 1 }]} keyboardShouldPersistTaps="handled">
+      <View style={styles.brandRow}>
+        <BrandMark size={44} />
+        <View>
+          <Text style={styles.brandName}>ProofPilot</Text>
+          <Text style={styles.brandTag}>PURCHASE PROTECTION</Text>
+        </View>
+      </View>
+      <Card style={styles.card}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <View style={styles.recoveryIcon}><Feather name="lock" size={18} color={colors.brandDark} /></View>
+          <Text style={type.heading}>Choose a new password</Text>
+        </View>
+        <Text style={type.body}>
+          You opened a valid password-recovery link. Pick a new password for your account — your purchase records are untouched.
+        </Text>
+        <PasswordInput
+          editable={!busy}
+          label="NEW PASSWORD"
+          autoComplete="new-password"
+          textContentType="newPassword"
+          value={password}
+          onChangeText={setPassword}
+          error={error}
+          hint="At least 8 characters"
+        />
+        <Button label="Save new password" onPress={save} loading={busy} icon="check" fullWidth />
+      </Card>
+    </ScrollView>
+  );
 }

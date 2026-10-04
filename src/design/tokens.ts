@@ -71,6 +71,13 @@ export const colors = {
   hero: '#193831',
   heroDeep: '#25483E',
   heroMuted: '#2F5D4A',
+  // On-hero text — dark green surfaces need their own legible ink scale
+  heroText: '#FFFFFF',
+  heroTextSoft: '#CCDAD4',
+  heroTextFaint: '#B5C6C2',
+  heroEyebrow: '#C6E0BD',
+  heroAsideLabel: '#E2EFDD',
+  heroAsideNote: '#BECEC6',
   // Dark / navy
   navy: '#1E2E45',
   navyRaised: '#2A3D59',
@@ -81,6 +88,17 @@ export const colors = {
   transparent: 'transparent',
   focus: '#5B7FA6',
   focusRing: 'rgba(91,127,166,0.18)',
+  // Toast — dark elevated surface with its own icon tints for contrast
+  toastSurface: '#203125',
+  toastIconDanger: '#F2B8BD',
+  toastIconInfo: '#B9CFEA',
+  toastIconSuccess: '#DCEFC6',
+  // Misc surfaces
+  avatarSurface: '#F2E7DD',
+  urgentSurface: '#FFFBF5',
+  dangerHover: '#F3D3D7',
+  // Product tile palette — deterministic tints per purchase
+  productTints: ['#E7EDFF', '#FAE8DB', '#E3F1E9', '#FBE9EA', '#F1E8FA', '#EAF2F8', '#F6F0DD'],
 } as const;
 
 export const spacing = {

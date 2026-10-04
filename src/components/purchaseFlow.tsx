@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from './Feather';
 import { colors, radius, spacing, type } from '../design/tokens';
 import { validatePurchaseFields, type PurchaseFields } from '../lib/purchaseValidation';
@@ -10,7 +10,7 @@ import { persistDocumentUri } from '../lib/documents';
 import { documentFailureMessage } from '../lib/documentErrors';
 import { deriveProtection, formatDate, formatMoney, isValidIsoDate, isoDate, isoDaysFrom, protectionLabel } from '../lib/purchaseSelectors';
 import type { DeadlineType, DocumentKind, FeatherIconName, Purchase, PurchaseDeadline, PurchaseDocument } from '../types/purchase';
-import { Badge, Banner, Button, Chip, IconButton, Input, interactive, Sheet } from './ui';
+import { Badge, Banner, Button, Chip, IconButton, Input, Sheet, StepIndicator, interactive, useReducedMotion } from './ui';
 
 type Form = { name: string; merchant: string; price: string; purchaseDate: string; category: string; serial: string; model: string; returnDeadline: string; warrantyEnd: string; warrantyProvider: string; notes: string };
 type Field = keyof Form;
@@ -20,7 +20,9 @@ type UploadState = 'idle' | 'processing' | 'success' | 'error';
 const blankForm: Form = { name: '', merchant: '', price: '', purchaseDate: '', category: 'Other', serial: '', model: '', returnDeadline: '', warrantyEnd: '', warrantyProvider: '', notes: '' };
 export const categoryOptions = ['Electronics', 'Appliances', 'Furniture', 'Clothing', 'Tools', 'Household', 'Other'];
 const categoryIcons: Record<string, FeatherIconName> = { Electronics: 'monitor', Appliances: 'wind', Furniture: 'briefcase', Clothing: 'shopping-bag', Tools: 'tool', Household: 'home', Other: 'package' };
-const tints = ['#E7EDFF', '#FAE8DB', '#E3F1E9', '#FBE9EA', '#F1E8FA', '#EAF2F8', '#F6F0DD'];
+const tints = colors.productTints;
+const flowSteps = ['Start', 'Details', 'Review', 'Saved'];
+const stepIndex: Record<FlowStep, number> = { start: 0, form: 1, review: 2, success: 3 };
 
 function formFor(purchase: Purchase): Form { return { name: purchase.name, merchant: purchase.merchant, price: purchase.price?.toString() ?? '', purchaseDate: purchase.purchaseDate ?? '', category: purchase.category, serial: purchase.serial ?? '', model: purchase.model ?? '', returnDeadline: purchase.returnDeadline ?? '', warrantyEnd: purchase.warrantyEnd ?? '', warrantyProvider: purchase.warrantyProvider ?? '', notes: purchase.notes ?? '' }; }
 async function documentFor(asset: DocumentPicker.DocumentPickerAsset, kind: DocumentKind): Promise<PurchaseDocument> {
@@ -132,6 +134,7 @@ export function PurchaseFlow({ visible, initialPurchase, merchants, defaultRetur
 
   return (
     <Sheet visible={visible} onClose={() => { if (saveState !== 'saving') onClose(); }} wide eyebrow={editing ? 'EDIT RECORD' : 'NEW RECORD'} title={editing ? 'Edit purchase' : 'Protect a purchase'} subtitle={editing ? 'Keep this purchase record accurate and complete.' : 'Receipts, return windows, and warranties — one safe place.'}>
+      <StepIndicator steps={flowSteps} current={stepIndex[step]} startIndex={editing ? 1 : 0} />
       {step === 'start' ? <StartStep onManual={() => setStep('form')} onScan={scanReceipt} onUpload={() => pickDocument('receipt')} upload={upload} uploadError={uploadError} /> : null}
       {step === 'form' ? (
         <FormStep form={form} errors={errors} documents={documents} upload={upload} uploadError={uploadError} customDeadlines={customDeadlines} onCustomDeadlinesChange={setCustomDeadlines} update={update} onPickDocument={pickDocument} onRemoveDocument={(id) => { setDocuments((current) => current.filter((document) => document.id !== id)); setUpload('idle'); setUploadError(null); }} merchantSuggestions={merchantSuggestions} defaultReturnDays={defaultReturnDays} onNext={() => { const valid = validate(); if (valid) setStep('review'); return valid; }} />
@@ -336,11 +339,21 @@ function ReviewStep({ purchase, onEdit, onSave, saveState, saveError }: { saveEr
 }
 
 function SuccessStep({ purchase, editing, onDone }: { purchase: Purchase; editing: boolean; onDone: () => void }) {
+  const reducedMotion = useReducedMotion();
+  const scale = useRef(new Animated.Value(reducedMotion ? 1 : 0.55));
+  useEffect(() => {
+    if (reducedMotion) return;
+    const animation = Animated.spring(scale.current, { toValue: 1, friction: 5, tension: 64, useNativeDriver: false });
+    animation.start();
+    return () => animation.stop();
+  }, [reducedMotion]);
   const returnInfo = purchase.returnDeadline ? `Return window closes ${formatDate(purchase.returnDeadline)}` : 'No return deadline saved';
   const warrantyInfo = purchase.warrantyEnd ? `Warranty coverage through ${formatDate(purchase.warrantyEnd)}` : 'No warranty date saved';
   return (
     <View style={styles.success}>
-      <View style={styles.successIcon}><Feather name="check" size={30} color={colors.success} /></View>
+      <Animated.View style={[styles.successIconWrap, { transform: [{ scale: scale.current }] }]}>
+        <View style={styles.successIcon}><Feather name="check" size={30} color={colors.success} /></View>
+      </Animated.View>
       <Text style={type.title}>{editing ? 'Purchase updated' : 'Purchase protected'}</Text>
       <Text style={[type.body, styles.successCopy]}>{editing ? 'Your record is up to date.' : `${purchase.name} is now part of your protection record.`}</Text>
       <View style={styles.successCard}>
@@ -373,7 +386,8 @@ const styles = StyleSheet.create({
   reviewRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.lg, paddingVertical: spacing.sm + 2, borderBottomWidth: 1, borderColor: colors.border },
   reviewValue: { textAlign: 'right', flexShrink: 1 },
   success: { alignItems: 'center', paddingVertical: spacing.xl, maxWidth: 460, alignSelf: 'center', width: '100%' },
-  successIcon: { height: 66, width: 66, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.successSurface, marginBottom: spacing.lg },
+  successIconWrap: { marginBottom: spacing.lg },
+  successIcon: { height: 66, width: 66, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.successSurface },
   successCopy: { textAlign: 'center', marginTop: spacing.sm },
   successCard: { alignSelf: 'stretch', padding: spacing.lg, borderRadius: radius.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, marginTop: spacing.xl, gap: spacing.md },
   successRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

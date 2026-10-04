@@ -14,7 +14,7 @@ import { createAIService } from '../services/ai/AIService';
 import type { AppSettings } from '../hooks/useAppSettings';
 import type { SyncStatus } from '../hooks/usePurchaseStore';
 import type { FeatherIconName, Purchase } from '../types/purchase';
-import { Badge, Banner, Button, Card, Input, Sheet } from './ui';
+import { Badge, Banner, Button, Card, Input, PasswordInput, Sheet } from './ui';
 
 type SettingsProps = {
   items: Purchase[];
@@ -233,7 +233,7 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
         </Card>
         <Sheet visible={deleteOpen} onClose={() => { if (!deleting) { setDeleteOpen(false); setDeletePassword(''); setDeleteConfirmation(''); } }} title="Permanently delete your account?" eyebrow="IRREVERSIBLE ACTION">
           <Banner tone="danger" title="Keep a backup before continuing" message="You cannot undo this. Cloud writes pause once deletion starts. If cleanup fails, retry; signing out is not proof that deletion completed." />
-          <Input label="CURRENT PASSWORD" value={deletePassword} onChangeText={setDeletePassword} secureTextEntry autoComplete="password" />
+          <PasswordInput label="CURRENT PASSWORD" value={deletePassword} onChangeText={setDeletePassword} autoComplete="password" />
           <Input label="TYPE DELETE TO CONFIRM" value={deleteConfirmation} onChangeText={setDeleteConfirmation} autoCapitalize="characters" />
           {deleteError ? <Text accessibilityRole="alert" style={type.bodySmall}>{deleteError}</Text> : null}
           <Button label="Permanently delete account" variant="danger" disabled={deleteConfirmation !== 'DELETE' || !deletePassword} loading={deleting} onPress={async () => {
@@ -253,8 +253,7 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
               <Text style={type.bodySmall}>Versioned JSON with records and claim text. No document files or device paths.</Text>
             </View>
             <Button size="sm" variant="secondary" icon="download" label="Export" loading={exporting} onPress={exportData} disabled={items.length === 0} />
-          </View>
-          {onRestoreBackup ? <View style={styles.dataRow}>
+          </View>          {onRestoreBackup ? <View style={styles.dataRow}>
             <View style={{ flex: 1, minWidth: 170 }}><Text style={type.label}>Restore a JSON backup</Text><Text style={type.bodySmall}>Adds new copies to the current account; never replaces records. Files are not included. Repeated restores create copies.</Text></View>
             <Button label="Choose backup" variant="secondary" onPress={selectBackup} disabled={restoring || choosingBackup} />
           </View> : null}
@@ -269,7 +268,7 @@ export function SettingsScreen({ items, settings, updateSettings, userEmail, con
             </View>
             <Button size="sm" variant="secondary" icon="refresh-cw" label="Restore" onPress={onRestoreSamples} />
           </View> : null}
-          <View style={styles.dataRow}>
+          <View style={styles.dangerDataRow}>
             <View style={{ flex: 1, minWidth: 170 }}>
               <Text style={type.label}>Delete all purchases</Text>
               <Text style={type.bodySmall}>Removes these records locally and queues cloud deletion when signed in. Does not delete your account or all stored file bytes.</Text>
@@ -374,6 +373,18 @@ const styles = StyleSheet.create({
   returnRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
   syncRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceMuted, marginBottom: spacing.md, flexWrap: 'wrap' },
   dataRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderColor: colors.border },
+  dangerDataRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.dangerSurface,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+  },
   privacyRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
   versionRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, flexWrap: 'wrap' },
 });

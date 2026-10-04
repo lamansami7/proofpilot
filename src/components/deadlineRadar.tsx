@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
   groupIconDanger: { backgroundColor: colors.dangerSurface, borderColor: colors.dangerBorder },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   deadlineCard: { padding: spacing.lg, flexBasis: 248, flexGrow: 1, maxWidth: 400, gap: spacing.sm, ...shadows.card },
-  deadlineCardUrgent: { borderColor: colors.warningBorder, backgroundColor: '#FFFBF5', ...shadows.raised },
+  deadlineCardUrgent: { borderColor: colors.warningBorder, backgroundColor: colors.urgentSurface, ...shadows.raised },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.sm },
   cardType: { marginTop: spacing.sm, letterSpacing: 0.7, fontWeight: '700' as const },
   product: { ...type.heading, fontSize: 15, marginTop: 2, letterSpacing: -0.2 },
